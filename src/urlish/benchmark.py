@@ -30,12 +30,13 @@ from .data import (
     remove_domains,
     select,
 )
-from .features import BrandIndex, analyze, featurize
+from .features import FEATURE_NAMES, BrandIndex, analyze, featurize
 from .metrics import at_threshold, threshold_at_fpr
 
 # Installed editable from src/, so the repo root is two levels above this file.
 ROOT = Path(__file__).resolve().parents[2]
 
+SCHEMA = 1
 SEED = 0
 TARGET_FPR = 0.01
 HEAD_CUT = 10_000
@@ -363,6 +364,8 @@ def main() -> int:
     with open(ARTIFACTS / "model.pkl", "wb") as fh:
         pickle.dump(
             {
+                "schema": SCHEMA,
+                "feature_names": list(FEATURE_NAMES),
                 "model": shipped,
                 "brands": brands,
                 "threshold": shipped_threshold,
