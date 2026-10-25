@@ -1,0 +1,14 @@
+[project]
+name = "urlish"
+version = "0.1.0"
+description = "Client-side malicious URL detection, and the evaluation that shows why most published versions fail"
+requires-python = ">=3.12"
+# Pinned: the report's numbers are deterministic and depend on these versions.
+dependencies = [
+    "numpy==2.5.2",
+    "scikit-learn==1.9.1",
+]
+
+[tool.uv]
+# Scripts put src/ on sys.path themselves, so no install step is needed.
+package = false

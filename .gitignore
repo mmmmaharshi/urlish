@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment (uv recreates this from uv.lock)
+.venv/
+
+# Datasets are downloaded, not versioned: see the Re-download block in README.md
+data/
+
+# Rebuilt in ~50 s by `uv run python benchmark.py`
+artifacts/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+
+# Agent skills are installed from skills-lock.json
+.agents/
+
+# OS
+Thumbs.db
+.DS_Store
