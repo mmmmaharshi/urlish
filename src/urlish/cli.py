@@ -6,64 +6,31 @@ urlish --train          # rebuild the model artifact first
 
 from __future__ import annotations
 
-import pickle
-import sys
-from typing import Any
+import argparse
 
-from . import ROOT
-from .features import ARTIFACT_SCHEMA, FEATURE_NAMES, analyze, featurize
-
-ARTIFACTS = ROOT / "artifacts" / "model.pkl"
-
-
-def validate(bundle: dict[str, Any]) -> None:
-    """Reject an artifact whose features do not match this code.
-
-    A silently stale model scores confidently and wrongly, which is worse than
-    refusing to score at all.
-    """
-    if bundle.get("schema") != ARTIFACT_SCHEMA:
-        raise ValueError(f"artifact schema {bundle.get('schema')!r}, expected {ARTIFACT_SCHEMA}")
-    if bundle.get("feature_names") != list(FEATURE_NAMES):
-        raise ValueError("artifact was built with different features")
-    if bundle["model"].n_features_in_ != len(FEATURE_NAMES):
-        raise ValueError("artifact model has a different feature count")
-
-
-def load() -> dict[str, Any]:
-    if not ARTIFACTS.exists():
-        print("no model yet - run `uv run urlish-benchmark` first", file=sys.stderr)
-        raise SystemExit(1)
-    with open(ARTIFACTS, "rb") as fh:
-        bundle = pickle.load(fh)
-    try:
-        validate(bundle)
-    except ValueError as exc:
-        print(
-            f"{ARTIFACTS}: {exc}; rerun `uv run urlish-benchmark`",
-            file=sys.stderr,
-        )
-        raise SystemExit(2) from exc
-    return bundle
+from .artifact import load
+from .features import analyze, featurize
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if "--train" in argv:
+    parser = argparse.ArgumentParser(prog="urlish", description=__doc__)
+    parser.add_argument("--train", action="store_true", help="rebuild the model artifact first")
+    parser.add_argument("urls", nargs="*", help="URLs to score")
+    args = parser.parse_args(argv)
+
+    if args.train:
         from .benchmark import main as benchmark_main
 
         return benchmark_main()
-
-    urls = [a for a in argv if not a.startswith("--")]
-    if not urls:
-        print(__doc__)
+    if not args.urls:
+        parser.print_help()
         return 2
 
     bundle = load()
     model, brands = bundle["model"], bundle["brands"]
-    threshold = float(bundle["threshold"])
+    threshold = bundle["threshold"]
 
-    for url in urls:
+    for url in args.urls:
         prob = float(model.predict_proba([featurize(url, brands)])[0][1])
         matches, _ = analyze(url, brands)
         print(f"\n{url}")

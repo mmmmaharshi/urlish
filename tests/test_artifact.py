@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from urlish import cli
+from urlish import artifact
 from urlish.benchmark import (
     DATA,
     SEED,
@@ -20,13 +20,12 @@ from urlish.benchmark import (
     load_dataset,
     split_indices,
 )
-from urlish.cli import ARTIFACTS, load, validate
 from urlish.data import group_split, select
 from urlish.features import FEATURE_NAMES, featurize
 from urlish.metrics import at_threshold, threshold_at_fpr
 
 pytestmark = pytest.mark.skipif(
-    not (DATA / "tranco.csv").exists() or not ARTIFACTS.exists(),
+    not (DATA / "tranco.csv").exists() or not artifact.PATH.exists(),
     reason="needs data/ and artifacts/model.pkl; run `uv run urlish-benchmark` first",
 )
 
@@ -46,7 +45,7 @@ def score(rows, brands, idx):
 
 
 def test_threshold_is_calibrated_on_the_shipped_model() -> None:
-    bundle = load()
+    bundle = artifact.load()
     rows, brands = load_dataset()
     fit, cal, test = shipped_split(rows, brands)
 
@@ -77,7 +76,7 @@ def test_test_half_is_domain_disjoint_from_the_shipped_model() -> None:
 
 
 def test_rejects_a_bundle_built_for_other_features() -> None:
-    bundle = load()
+    bundle = artifact.load()
     mutations: list[dict[str, object]] = [
         {"schema": 99},
         {"feature_names": bundle["feature_names"][:-1]},
@@ -88,17 +87,17 @@ def test_rejects_a_bundle_built_for_other_features() -> None:
     for mutation in mutations:
         bad = {**bundle, **mutation}
         with pytest.raises(ValueError):
-            validate(bad)
+            artifact.validate(bad)
 
 
 def test_load_exits_with_the_rerun_hint(tmp_path, monkeypatch, capsys) -> None:
-    bundle = load()
+    bundle = artifact.load()
     bad = tmp_path / "model.pkl"
     with open(bad, "wb") as fh:
         pickle.dump({**bundle, "schema": 99}, fh)
-    monkeypatch.setattr(cli, "ARTIFACTS", bad)
+    monkeypatch.setattr(artifact, "PATH", bad)
 
     with pytest.raises(SystemExit) as exit_info:
-        cli.load()
+        artifact.load()
     assert exit_info.value.code == 2
     assert "rerun `uv run urlish-benchmark`" in capsys.readouterr().err

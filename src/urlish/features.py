@@ -3,7 +3,7 @@
 Two independent signals live here:
 
 * `featurize()` produces the numeric vector a classifier learns from.
-* `BrandIndex` + `explain()` implement deterministic impersonation detection.
+* `BrandIndex` + `analyze()` implement deterministic impersonation detection.
   That part needs no training data and no model, which is the whole point:
   a lexical classifier cannot see that `paypal-secure.xyz` is *about PayPal*.
 """
@@ -148,11 +148,6 @@ def _has_port(parts: SplitResult) -> bool:
         return parts.port is not None
     except ValueError:  # a non-numeric port is not a port
         return False
-
-
-def explain(url: str, brands: BrandIndex | None) -> list[BrandMatch]:
-    """Deterministic impersonation signals. No model, no training data."""
-    return analyze(url, brands)[0]
 
 
 def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]:

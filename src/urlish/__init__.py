@@ -12,7 +12,7 @@ from .core import (
     split_url,
     tokenize,
 )
-from .features import FEATURE_NAMES, BrandIndex, analyze, explain, featurize
+from .features import FEATURE_NAMES, BrandIndex, analyze, featurize
 
 # Installed editable from src/: the checkout root, where data/ and artifacts/ live.
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +24,6 @@ __all__ = [
     "analyze",
     "deletes",
     "entropy",
-    "explain",
     "featurize",
     "fold",
     "host_of",

@@ -18,10 +18,17 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 from .core import host_of, registrable_domain
 
 STRATA = ("head", "tail")
+
+
+class Counts(TypedDict):
+    n: int
+    pos: int
+    neg: int
 
 
 @dataclass(frozen=True)
@@ -243,8 +250,8 @@ def group_split(rows: list[Row], frac: float, seed: int = 0) -> tuple[list[int],
     return train, sorted(test)
 
 
-def describe(rows: list[Row]) -> dict[tuple[str, str], dict[str, int]]:
-    out: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"n": 0, "pos": 0, "neg": 0})
+def describe(rows: list[Row]) -> dict[tuple[str, str], Counts]:
+    out: dict[tuple[str, str], Counts] = defaultdict(lambda: {"n": 0, "pos": 0, "neg": 0})
     for row in rows:
         bucket = out[(row.collection, row.stratum or "-")]
         bucket["n"] += 1
