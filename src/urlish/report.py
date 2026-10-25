@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from . import __version__
 from .metrics import TARGET_FPR, Metrics, wilson
 
 if TYPE_CHECKING:
@@ -62,8 +63,8 @@ def table(results: list[Result]) -> str:
     return head + body
 
 
-def render(exp: Experiment) -> str:
-    """The whole report, from the measured results and nothing else."""
+def render(exp: Experiment, snapshot: dict[str, str]) -> str:
+    """The whole report, from the measured results and the inputs it read."""
     base = exp.base
     dom = exp.domain
     shift = exp.popularity
@@ -71,9 +72,11 @@ def render(exp: Experiment) -> str:
     cross_full = exp.collection_full
     rules = exp.rules
     lo, hi = wilson(cross_full.tp, cross_full.tp + cross_full.fn)
+    inputs = " · ".join(f"{name} {sha}" for name, sha in snapshot.items())
 
     lines = [
         "# urlish benchmark report\n",
+        f"urlish {__version__} · {inputs}\n",
         f"Target false-positive rate: {TARGET_FPR:.0%}. Thresholds are picked on held-out\n"
         "training data, never on the test set.\n",
         "## Dataset\n",

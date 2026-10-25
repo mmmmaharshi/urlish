@@ -13,6 +13,7 @@ builds the collection and stratum contrasts.
 
 from __future__ import annotations
 
+import hashlib
 import random
 import sys
 from collections import defaultdict
@@ -257,3 +258,12 @@ def describe(rows: list[Row]) -> dict[tuple[str, str], Counts]:
         bucket["n"] += 1
         bucket["pos" if row.y == 1 else "neg"] += 1
     return dict(out)
+
+
+def digest(path: Path) -> str:
+    """Short SHA-256 of a collection file, so the report names the snapshot it read.
+
+    The feeds are live and `data/` is untracked: two runs a week apart can differ
+    with no code change. The digest is what makes a result reproducible.
+    """
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]

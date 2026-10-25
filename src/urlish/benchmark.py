@@ -20,6 +20,7 @@ from .data import (
     Row,
     build_dataset,
     describe,
+    digest,
     group_split,
     load_majestic,
     load_tranco,
@@ -39,6 +40,9 @@ SEED = 0
 HEAD_CUT = 10_000
 TAIL_CUT = 60_000
 DATA = ROOT / "data"
+DATA_FILES = tuple(
+    DATA / name for name in ("tranco.csv", "majestic.csv", "army.txt", "openphish.txt")
+)
 README = ROOT / "README.md"
 RESULTS_START = "<!-- results:start -->"
 RESULTS_END = "<!-- results:end -->"
@@ -314,7 +318,7 @@ def main() -> int:
         exp.calibrated_on,
     )
 
-    rendered = report.render(exp)
+    rendered = report.render(exp, {p.stem: digest(p) for p in DATA_FILES})
     (ROOT / "REPORT.md").write_text(rendered, encoding="utf-8")
     update_readme(table(exp.results))
     print("\n" + rendered)

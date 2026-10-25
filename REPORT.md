@@ -1,5 +1,7 @@
 # urlish benchmark report
 
+urlish 0.1.0 · tranco 919de10c · majestic 22269fcd · army aed736bd · openphish 292d9656
+
 Target false-positive rate: 1%. Thresholds are picked on held-out
 training data, never on the test set.
 

@@ -69,6 +69,21 @@ them at the third decimal.
 Both commands resolve `data/` and `artifacts/` from the checkout, so run them from
 a clone; a wheel install has no collections to read.
 
+## Versioning
+
+The version is declared once, in `pyproject.toml`; `urlish.__version__` reads it
+back from the installed metadata, so there is no second copy to drift.
+
+A version marks a **citable set of numbers**, not a code change: bump it when the
+report or the features change, never for a docs edit. Releases are git tags
+(`git tag -a v0.1.0`), not artifacts on a package index.
+
+`REPORT.md` opens with the version and the SHA-256 prefix of each collection it
+read. That line is the reproducibility claim: the feeds are live and `data/` is
+untracked, so rerunning a week later with fresh downloads changes the header even
+though the code did not change. `ARTIFACT_SCHEMA` is a separate contract - it
+guards the pickle against a feature change and has nothing to do with releases.
+
 ## How it works
 
 **Classifier.** A fixed set of string features into `HistGradientBoostingClassifier`:
