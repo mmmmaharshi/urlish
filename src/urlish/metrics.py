@@ -6,10 +6,39 @@ visits is unusable, so everything is reported at a fixed false-positive rate.
 
 from __future__ import annotations
 
+import math
+from typing import TypedDict
+
 import numpy as np
+from numpy.typing import ArrayLike
 
 
-def threshold_at_fpr(scores, y, target: float = 0.01) -> float:
+class Metrics(TypedDict):
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+    precision: float
+    recall: float
+    fpr: float
+    auc: float
+
+
+TARGET_FPR = 0.01
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson interval - honest error bars on the 300-URL test set."""
+    if n == 0:
+        return 0.0, 0.0
+    p = k / n
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return max(0.0, (centre - margin) / denom), min(1.0, (centre + margin) / denom)
+
+
+def threshold_at_fpr(scores: ArrayLike, y: ArrayLike, target: float = 0.01) -> float:
     """Highest threshold whose false-positive rate on this set is <= target."""
     scores = np.asarray(scores, dtype=float)
     y = np.asarray(y)
@@ -23,7 +52,7 @@ def threshold_at_fpr(scores, y, target: float = 0.01) -> float:
     return float(np.nextafter(negatives[idx], np.inf))
 
 
-def at_threshold(scores, y, threshold: float) -> dict[str, float]:
+def at_threshold(scores: ArrayLike, y: ArrayLike, threshold: float) -> Metrics:
     scores = np.asarray(scores, dtype=float)
     y = np.asarray(y)
     pred = scores >= threshold
@@ -34,7 +63,6 @@ def at_threshold(scores, y, threshold: float) -> dict[str, float]:
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     fpr = fp / (fp + tn) if fp + tn else 0.0
-    accuracy = (tp + tn) / max(1, tp + tn + fp + fn)
     if len(np.unique(y)) == 2:
         from sklearn.metrics import roc_auc_score
 
@@ -49,6 +77,5 @@ def at_threshold(scores, y, threshold: float) -> dict[str, float]:
         "precision": precision,
         "recall": recall,
         "fpr": fpr,
-        "accuracy": accuracy,
         "auc": auc,
     }

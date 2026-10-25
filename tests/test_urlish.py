@@ -1,26 +1,37 @@
-"""Offline self-checks. No data files, no network.
-
-python tests/test_selfcheck.py
-"""
+"""Offline checks: no data files, no network."""
 
 from __future__ import annotations
 
-import sys
+import contextlib
+import io
+import re
+import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import numpy as np
+import pytest
 
-import numpy as np  # noqa: E402
-
-from urlish.data import (  # noqa: E402
+from urlish.core import (
+    canonicalize,
+    fold,
+    host_of,
+    levenshtein,
+    registrable_domain,
+    split_url,
+)
+from urlish.data import (
     Row,
+    digest,
     group_split,
+    load_majestic,
+    load_tranco,
+    load_url_lines,
     random_split,
     remove_domains,
     select,
 )
-from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize  # noqa: E402
-from urlish.metrics import at_threshold, threshold_at_fpr  # noqa: E402
+from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize
+from urlish.metrics import at_threshold, threshold_at_fpr
 
 BRANDS = BrandIndex(
     [
@@ -36,9 +47,7 @@ BRANDS = BrandIndex(
 )
 
 
-def check_domains() -> None:
-    from urlish.core import registrable_domain
-
+def test_domains() -> None:
     assert registrable_domain("login.secure.example.co.uk") == "example.co.uk"
     assert registrable_domain("a.b.c.com") == "c.com"
     assert registrable_domain("EXAMPLE.COM.") == "example.com"
@@ -46,9 +55,7 @@ def check_domains() -> None:
     assert registrable_domain("localhost") == "localhost"
 
 
-def check_folding() -> None:
-    from urlish.core import fold, levenshtein
-
+def test_folding() -> None:
     assert fold("p\u0430ypa1") == "paypal", fold("p\u0430ypa1")  # Cyrillic a
     assert fold("g00gle") == "google"
     assert fold("Pay-Pal.com") == "paypalcom"
@@ -57,7 +64,7 @@ def check_folding() -> None:
     assert levenshtein("google", "amazon", 2) == 3  # capped
 
 
-def check_impersonation() -> None:
+def test_impersonation() -> None:
     def brands_of(url: str) -> list[str]:
         return [m.brand for m in analyze(url, BRANDS)[0]]
 
@@ -83,7 +90,24 @@ def check_impersonation() -> None:
     assert typo == 1, typo
 
 
-def check_features() -> None:
+def test_parse() -> None:
+    """One parse path: malformed input must not become a plausible host."""
+    # A broken IPv6 bracket is malformed for every caller. The feature helper
+    # used to substitute a placeholder domain here, so a host could look real.
+    assert split_url("http://[::1").netloc == ""
+    assert host_of("http://[::1") == ""
+    assert canonicalize("http://[::1") == "http://[::1"
+    assert analyze("http://[::1", BRANDS) == ([], 9)
+
+    # Scheme, case and trailing dot normalise once, in core.
+    assert host_of("example.com/path") == "example.com"
+    assert host_of("HTTPS://EXAMPLE.COM./") == "example.com"
+    assert host_of("ftp://x") == "x"
+    assert canonicalize("HTTP://EXAMPLE.COM./Path/") == "example.com/Path"
+    assert featurize("ftp://x", BRANDS) == featurize("http://x", BRANDS)
+
+
+def test_features() -> None:
     vec = featurize("https://paypa1.com/verify/account?token=1", BRANDS)
     assert len(vec) == len(FEATURE_NAMES), (len(vec), len(FEATURE_NAMES))
     assert all(isinstance(v, float) for v in vec)
@@ -105,7 +129,24 @@ def check_features() -> None:
     assert len(vecs) == 1, f"URL form changed the features: {vecs}"
 
 
-def check_threshold() -> None:
+def test_lure_count_and_port() -> None:
+    """Nested lure words count once, and colons in an IPv6 host are not a port."""
+    at = {name: i for i, name in enumerate(FEATURE_NAMES)}
+
+    banking = featurize("http://example.com/banking", BRANDS)
+    assert banking[at["lure_count"]] == 1.0, "banking must not also count bank"
+
+    two = featurize("http://example.com/bank/login", BRANDS)
+    assert two[at["lure_count"]] == 2.0, "bank and login are two lure words"
+
+    two_more = featurize("http://example.com/signin-login", BRANDS)
+    assert two_more[at["lure_count"]] == 2.0, "two distinct lure words must count twice"
+
+    assert featurize("http://[::1]/", BRANDS)[at["has_port"]] == 0.0
+    assert featurize("http://10.0.0.1:8080/", BRANDS)[at["has_port"]] == 1.0
+
+
+def test_threshold() -> None:
     rng = np.random.default_rng(0)
     scores = np.concatenate([rng.random(900) * 0.85, rng.random(100) * 0.1 + 0.9])
     y = np.array([0] * 900 + [1] * 100)
@@ -118,7 +159,7 @@ def check_threshold() -> None:
     assert threshold_at_fpr(np.array([0.1, 0.2, 0.9]), np.array([0, 0, 1]), 0.01) > 0.2
 
 
-def check_provenance() -> None:
+def test_provenance() -> None:
     """A row's collection and stratum are separate facts, and `select` keeps them
     apart. Conflating them is what makes a collection split measure popularity."""
     rows = [
@@ -138,7 +179,44 @@ def check_provenance() -> None:
     assert remove_domains([2, 3, 4], rows, {"c.com"}) == [3, 4]
 
 
-def check_splits() -> None:
+def test_loaders() -> None:
+    """A bad collection must stop the run, not produce a plausible-looking report."""
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp) / "empty.csv"
+        empty.write_text("", encoding="utf-8")
+        for loader in (load_tranco, load_majestic, load_url_lines):
+            with pytest.raises(ValueError, match=re.escape(str(empty))):
+                loader(empty)
+
+        header_only = Path(tmp) / "header.csv"
+        header_only.write_text("GlobalRank,Tld,Domain\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="GlobalRank,Domain"):
+            load_majestic(header_only)
+
+        good = Path(tmp) / "tranco.csv"
+        good.write_text("1,example.com\nnope,example.org\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            assert load_tranco(good) == [(1, "example.com")]
+        assert "skipped 1" in err.getvalue(), err.getvalue()
+
+        missing = Path(tmp) / "absent.csv"
+        with pytest.raises(FileNotFoundError, match="absent.csv"):
+            load_tranco(missing)
+
+
+def test_digest_follows_the_bytes() -> None:
+    """The report's provenance line is only useful if a different file differs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        first = Path(tmp) / "a.txt"
+        second = Path(tmp) / "b.txt"
+        first.write_text("1.2.3.4\n", encoding="utf-8")
+        second.write_text("5.6.7.8\n", encoding="utf-8")
+        assert len(digest(first)) == 8
+        assert digest(first) != digest(second)
+        assert digest(first) == digest(Path(tmp) / "a.txt"), "same file, same digest"
+
+
+def test_splits() -> None:
     rows = [
         Row(f"http://{d}/", int(i % 2), d, "synthetic", None)
         for i, d in enumerate(f"site{n}.com" for n in range(200))
@@ -151,24 +229,3 @@ def check_splits() -> None:
     train_r, test_r = random_split(rows, 0.2, 0)
     assert len(train_r) + len(test_r) == len(rows)
     assert set(train_r).isdisjoint(test_r)
-
-
-def main() -> int:
-    checks = [
-        check_domains,
-        check_folding,
-        check_impersonation,
-        check_features,
-        check_threshold,
-        check_provenance,
-        check_splits,
-    ]
-    for check in checks:
-        check()
-        print(f"ok  {check.__name__}")
-    print(f"\n{len(checks)} checks passed")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

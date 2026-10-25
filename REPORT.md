@@ -1,5 +1,7 @@
 # urlish benchmark report
 
+urlish 0.1.0 · tranco 919de10c · majestic 22269fcd · phishing_army aed736bd · openphish 292d9656
+
 Target false-positive rate: 1%. Thresholds are picked on held-out
 training data, never on the test set.
 
@@ -21,7 +23,7 @@ collection-shift rows, so it cannot move the other numbers.
 
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.3%** | 92.0% | 0.955 | 1.13% |
+| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
 | domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
 | popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
 | collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
@@ -31,7 +33,7 @@ collection-shift rows, so it cannot move the other numbers.
 
 ## What the numbers say
 
-The baseline reports 63.3% recall and 92.0%
+The baseline reports 63.5% recall and 91.7%
 precision at a 1% false-positive budget, AUC 0.955. Even the leaky
 split is not 99%: this is host-level detection on live collections, not a toy.
 
@@ -40,8 +42,8 @@ ratio varies by an order of magnitude across rows (pos rate column). Compare row
 on recall@1%FPR and AUC; read precision only against its own pos rate.
 
 **Domain leakage costs little.** Domain-disjoint evaluation loses
-0.6 points of recall
-(63.3% -> 62.7%) with AUC essentially unchanged
+0.8 points of recall
+(63.5% -> 62.7%) with AUC essentially unchanged
 (0.955 -> 0.958). Phishing hosts are mostly single-use, so
 there was less to memorise than the usual story assumes.
 
@@ -56,7 +58,7 @@ metric looked healthy.
 two independent lists, this row changes the collector on both sides - Phishing
 Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the
 host-only view fixed. AUC falls 0.955 -> 0.810 and
-recall 63.3% -> 28.0%, with a realised FPR of
+recall 63.5% -> 28.0%, with a realised FPR of
 0.95% on negatives from a list it never saw.
 
 4,992 rows were dropped from the training half because their
@@ -79,10 +81,14 @@ is the argument for shipping both.
 
 ## Operating point of the shipped detector
 
-`predict.py` scores at **0.8870**, calibrated for a 1% budget on a
-domain-disjoint quarter of the training rows and stored in the model artifact.
-Scoring at 0.5 instead would realise a false-positive rate an order of magnitude
-over budget, because a gradient-boosted probability is not a decision threshold.
+`urlish` scores at **0.9062**. The artifact holds the model and
+threshold of the domain-disjoint row: fitted on the training half, calibrated on a
+quarter of it, and measured on the test half that neither half saw. That row reports
+0.79% false positives at 62.7% recall, inside the 1% budget. The
+budget is spent on the calibration set, and a different test distribution can spend
+more.
+Scoring at 0.5 instead would realise a false-positive rate many times over budget,
+because a gradient-boosted probability is not a decision threshold.
 
 ## Limitations
 
@@ -117,7 +123,7 @@ over budget, because a gradient-boosted probability is not a decision threshold.
 
 ```
 uv sync
-uv run python benchmark.py
-uv run python tests/test_selfcheck.py
+uv run urlish-benchmark
+uv run pytest -q
 ```
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 # shortcut: a ~70-entry Public Suffix List subset covering the common ccTLD
 # second-level suffixes. Only affects `registrable_domain`. Swap in a bundled
@@ -117,18 +117,31 @@ _HOMO = {
 }
 
 
-def host_of(url: str) -> str:
-    """Lowercase hostname of a URL, tolerating scheme-less input."""
+def split_url(url: str) -> SplitResult:
+    """Split a URL, adding a scheme when missing. Never raises.
+
+    Malformed input splits to an empty result so every caller degrades the same
+    way instead of each inventing its own fallback.
+    """
     raw = (url or "").strip()
     if not raw:
-        return ""
+        return urlsplit("")
     if "://" not in raw:
         raw = "http://" + raw
     try:
-        parts = urlsplit(raw)
-        return (parts.hostname or "").strip().lower().rstrip(".")
+        return urlsplit(raw)
     except ValueError:
-        return ""
+        return urlsplit("")
+
+
+def hostname(parts: SplitResult) -> str:
+    """Normalised host from an already-split URL (GLOSSARY: host)."""
+    return (parts.hostname or "").strip().lower().rstrip(".")
+
+
+def host_of(url: str) -> str:
+    """Lowercase hostname of a URL, tolerating scheme-less input."""
+    return hostname(split_url(url))
 
 
 def canonicalize(url: str) -> str:
@@ -137,14 +150,10 @@ def canonicalize(url: str) -> str:
     The scheme carries no signal, and including it teaches the model how the
     dataset was assembled instead of what a URL looks like.
     """
-    host = host_of(url)
+    parts = split_url(url)
+    host = hostname(parts)
     if not host:
         return (url or "").strip().lower()
-    raw = url if "://" in url else "http://" + url
-    try:
-        parts = urlsplit(raw)
-    except ValueError:
-        return host
     path = (parts.path or "").rstrip("/")
     query = f"?{parts.query}" if parts.query else ""
     return f"{host}{path}{query}"

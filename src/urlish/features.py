@@ -3,15 +3,18 @@
 Two independent signals live here:
 
 * `featurize()` produces the numeric vector a classifier learns from.
-* `BrandIndex` + `explain()` implement deterministic impersonation detection.
+* `BrandIndex` + `analyze()` implement deterministic impersonation detection.
   That part needs no training data and no model, which is the whole point:
   a lexical classifier cannot see that `paypal-secure.xyz` is *about PayPal*.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from pathlib import Path
+from urllib.parse import SplitResult
 
 from .core import (
     canonicalize,
@@ -19,9 +22,10 @@ from .core import (
     entropy,
     fold,
     has_ip_host,
-    host_of,
+    hostname,
     levenshtein,
     registrable_domain,
+    split_url,
     tokenize,
 )
 
@@ -32,6 +36,10 @@ LURE_WORDS = frozenset(
     gift bonus claim alert suspend limited validate authentication
     """.split()
 )
+
+# Longest alternative first, so "banking" counts once instead of also matching
+# "bank". The regex consumes the match, so nested words cannot double count.
+_LURE_RE = re.compile("|".join(sorted(LURE_WORDS, key=len, reverse=True)))
 
 # Cheap-registration TLDs that are over-represented in abuse feeds. This is a
 # feature, not a rule: plenty of legitimate sites use them.
@@ -77,7 +85,7 @@ class BrandIndex:
     brand itself.
     """
 
-    def __init__(self, entries, max_dist: int = 2) -> None:
+    def __init__(self, entries: Iterable[tuple[str, str]], max_dist: int = 2) -> None:
         self.max_dist = max_dist
         self.primary: dict[str, str] = {}
         self.labels: frozenset[str] = frozenset()
@@ -93,8 +101,8 @@ class BrandIndex:
         self._table = {k: tuple(v) for k, v in table.items()}
 
     @classmethod
-    def from_tranco(cls, path, top: int = 2000, max_dist: int = 2) -> "BrandIndex":
-        entries = []
+    def from_tranco(cls, path: str | Path, top: int = 2000, max_dist: int = 2) -> BrandIndex:
+        entries: list[tuple[str, str]] = []
         with open(path, encoding="utf-8") as fh:
             for line in fh:
                 parts = line.strip().split(",")
@@ -134,17 +142,12 @@ def _tld(reg: str) -> str:
     return reg.rsplit(".", 1)[-1] if "." in reg else ""
 
 
-def _url_parts(url: str):
-    raw = url if "://" in url else "http://" + url
+def _has_port(parts: SplitResult) -> bool:
+    """A bracketed IPv6 host has colons but no port."""
     try:
-        return urlsplit(raw)
-    except ValueError:
-        return urlsplit("http://invalid.invalid")
-
-
-def explain(url: str, brands: BrandIndex | None) -> list[BrandMatch]:
-    """Deterministic impersonation signals. No model, no training data."""
-    return analyze(url, brands)[0]
+        return parts.port is not None
+    except ValueError:  # a non-numeric port is not a port
+        return False
 
 
 def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]:
@@ -154,8 +157,8 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
     """
     if brands is None or not url:
         return [], 9
-    parts = _url_parts(url)
-    host = host_of(url)
+    parts = split_url(url)
+    host = hostname(parts)
     reg = registrable_domain(host)
     if not reg:
         return [], 9
@@ -178,13 +181,14 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
     for tok in tokenize(haystack):
         folded_tok = fold(tok)
         if folded_tok in brands.labels and brands.primary[folded_tok] != reg:
-            matches.append(
-                BrandMatch(folded_tok, brands.primary[folded_tok], "brand-token", 0)
-            )
+            matches.append(BrandMatch(folded_tok, brands.primary[folded_tok], "brand-token", 0))
             break
 
     return matches, dist
 
+
+# Bumped when the feature vector changes shape; the artifact stores it.
+ARTIFACT_SCHEMA = 1
 
 FEATURE_NAMES = (
     "url_len",
@@ -217,8 +221,8 @@ FEATURE_NAMES = (
 
 def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     """Fixed-order numeric vector. Names match FEATURE_NAMES."""
-    parts = _url_parts(url)
-    host = host_of(url)
+    parts = split_url(url)
+    host = hostname(parts)
     reg = registrable_domain(host)
     label = reg.split(".")[0] if reg else ""
     canonical = canonicalize(url)
@@ -226,7 +230,7 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     path, _, query = tail.partition("?")
     full = canonical.lower()
 
-    lure_hits = sum(1 for w in LURE_WORDS if w in full)
+    lure_hits = len(_LURE_RE.findall(full))
     longest = max((len(t) for t in host.replace(".", " ").split()), default=0)
 
     matches, dist = analyze(url, brands)
@@ -248,11 +252,11 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
         float(has_ip_host(host)),
         float("xn--" in host),
         float("@" in url),
-        float(":" in (parts.netloc or "")),
+        float(_has_port(parts)),
         float(_tld(reg) in SUSPICIOUS_TLDS),
         float(len(_tld(reg))),
         float(lure_hits),
-        float(any(w in path for w in LURE_WORDS)),
+        float(_LURE_RE.search(path) is not None),
         float(sum(c.isdigit() for c in host)),
         float(longest),
         min(dist, 3) / 3.0,
