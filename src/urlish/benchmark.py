@@ -250,8 +250,8 @@ def run_experiments(
     s_train, s_test = negative_shift()
     c_train, c_test = collection_shift()
 
-    print("  random rows (the usual baseline)...", file=sys.stderr)
-    base = evaluated("random rows (the usual baseline)", X, r_train, r_test, grouped=False)
+    print("  random rows...", file=sys.stderr)
+    base = evaluated("random rows", X, r_train, r_test, grouped=False)
     print("  domain-disjoint...", file=sys.stderr)
     domain = evaluated("domain-disjoint", X, d_train, d_test)
     print("  popularity shift (head train, tail test)...", file=sys.stderr)

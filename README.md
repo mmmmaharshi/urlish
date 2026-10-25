@@ -1,7 +1,7 @@
 # urlish
 
-A client-side malicious URL detector, and the evaluation that shows why most
-published versions of it do not work.
+A client-side malicious URL detector, and the evaluation that shows why the
+numbers published for it are too optimistic.
 
 No server, no DNS lookups, no page fetches. The detector sees a URL string and
 nothing else, which is the constraint if you want it to run in a browser.
@@ -18,7 +18,7 @@ prose.
 <!-- results:start -->
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
+| random rows | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
 | domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
 | popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
 | collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
@@ -46,6 +46,16 @@ cover different halves of the problem: at the operating point the classifier
 misses `paypa1.com`, and the rules catch it.
 
 Full numbers and method: [REPORT.md](REPORT.md).
+
+## How published detectors evaluate
+
+Three published detectors show the common protocols:
+
+1. [URLNet](https://arxiv.org/abs/1802.03162) (2018) trains on the first 60% of a timestamped VirusTotal set and tests on the last 40%. Rows inside each period are random.
+2. [URLTran](https://arxiv.org/abs/2106.05256) (2021) uses six weeks of browser telemetry: four weeks to train, one to validate, one to test.
+3. [Phishpedia](https://www.usenix.org/conference/usenixsecurity21/presentation/lin) (2021) collects six months of OpenPhish pages and splits them by time. It reports that 48% of the pages in the second half matched a page in the first half.
+
+All three hold out data by time. None reports the popularity mix of the negatives, and none removes shared registrable domains. The rows in this repo change those two axes one at a time.
 
 ## Quick start
 

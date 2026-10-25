@@ -23,7 +23,7 @@ collection-shift rows, so it cannot move the other numbers.
 
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
+| random rows | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
 | domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
 | popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
 | collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
