@@ -1,9 +1,10 @@
 # AGENTS.md
 
-## Must follow: reply style
+## Must follow: writing
 
 Every reply uses the `$caveman $simple-english $i-have-adhd` skills together.
-Load all three, then apply them to the answer text.
+Docs, comments, commits, and any other written text use the
+`$simple-english $unslop $writing-for-agents` skills together.
 
 ## Must follow: coding standards
 
