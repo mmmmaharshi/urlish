@@ -18,11 +18,11 @@ prose.
 <!-- results:start -->
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.5% | 0.955 | 1.21% |
-| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.3%** | 94.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 58.7% | 0.959 | 2.39% |
-| collection shift, host-only | 12,756 | 10,300 | 2.9% | **42.0%** | 55.5% | 0.806 | 1.01% |
-| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **54.0%** | 61.6% | 0.914 | 1.01% |
+| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
+| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
+| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
+| collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
+| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **48.3%** | 60.4% | 0.930 | 0.95% |
 | impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
 <!-- results:end -->
 
@@ -40,8 +40,8 @@ Three things fall out of that table:
    fixing the confound and the shared-domain leakage moved it further down.
 
 The deterministic brand rules need no training data and are precise at a low
-false-positive rate, but their recall is in the single digits. Most phishing
-hosts are throwaway domains on cheap TLDs, not typosquats. The two approaches
+realised FPR, but their recall is in the single digits. Most phishing hosts are
+throwaway domains on cheap TLDs, not typosquats. The two approaches
 cover different halves of the problem: at the operating point the classifier
 misses `paypa1.com`, and the rules catch it.
 
@@ -52,8 +52,9 @@ Full numbers and method: [REPORT.md](REPORT.md).
 ```bash
 uv sync                                 # creates .venv from uv.lock
 uv run urlish-benchmark                 # ~50 s, writes REPORT.md, README table, artifacts/
-uv run pytest -q                        # offline checks + the artifact operating point
+uv run pytest -q                        # offline checks; adds the artifact check once trained
 uv run urlish https://paypal.com.secure-login.xyz/verify
+uv run urlish --train                   # rebuild the artifact before scoring, if needed
 ```
 
 The threshold is calibrated for the 1% budget and stored in the model artifact. It
@@ -65,22 +66,25 @@ Dependencies are pinned in `pyproject.toml` and locked in `uv.lock`. Keep the pi
 the report's numbers are deterministic, and a different scikit-learn build can move
 them at the third decimal.
 
+Both commands resolve `data/` and `artifacts/` from the checkout, so run them from
+a clone; a wheel install has no collections to read.
+
 ## How it works
 
-**Classifier.** 25 string features into `HistGradientBoostingClassifier`:
+**Classifier.** A fixed set of string features into `HistGradientBoostingClassifier`:
 length and entropy, digit/hyphen/dot counts, subdomain depth, path depth, query
 param count, suspicious TLD, lure keywords, distance to the nearest brand.
 Trained in seconds, no GPU, no transformer.
 
 **Rules.** `BrandIndex` folds homoglyphs and digit-for-letter swaps (`pаypal` and
 `paypa1` both become `paypal`), strips the scheme, and compares the registrable
-label against the top 2k Tranco brands by edit distance. Short labels require an
+label against the top Tranco brands by edit distance. Short labels require an
 exact or one-edit match, or three-letter suffixes collide with unrelated brands.
 
 **Normalisation.** `featurize()` is deliberately invariant to scheme, case, and
 trailing slash. An earlier version was not, and the model learned `http` vs
 `https` - a property of how the dataset was built, not of phishing. There is a
-self-check that pins this down.
+test that pins this down.
 
 **Provenance.** A row carries a `collection` and a `stratum`, which cannot be
 folded into one field. Collapsing them is what made the old collection-shift row
@@ -92,7 +96,7 @@ phishing" ([ADR 1](docs/adr/0001-synthesise-www-prefixes.md)).
 ## What is actually rigorous here
 
 - **Thresholds are chosen on held-out training data**, never on the test set.
-- **Every row reports recall at a fixed false-positive rate**, because accuracy
+- **Every row reports recall at a fixed false-positive budget**, because accuracy
   and even precision are meaningless under class imbalance. Precision is
   reported alongside the test set's positive rate so it can be read honestly.
 - **`pos rate` is a column, not a footnote.** Precision varies widely across rows
@@ -106,12 +110,14 @@ phishing" ([ADR 1](docs/adr/0001-synthesise-www-prefixes.md)).
 
 ## Data
 
-| collection | what | rows used |
-|---|---|---:|
-| Tranco top 100k | negatives, two popularity bands | 60,000 |
-| Majestic Million | negatives, head band only | 10,000 |
-| Phishing Army | positives, host-only | 12,000 |
-| OpenPhish | positives, full paths | 300 |
+| collection | what |
+|---|---|
+| Tranco top 100k | negatives, two popularity bands |
+| Majestic Million | negatives, head band only |
+| Phishing Army | positives, host-only |
+| OpenPhish | positives, full paths |
+
+Exact row counts per collection are in [REPORT.md](REPORT.md).
 
 `data/majestic.csv` is trimmed to the top 60k of the 1M-row download; the full
 file is 80 MB and only the head band is used. Tranco is dated - cite the list ID
@@ -134,9 +140,9 @@ curl -sO https://openphish.com/feed.txt
   always look "current".
 - **Labels are collection membership**, not ground truth. Collections include
   dead, parked and occasionally mislabelled hosts, and popularity is not safety.
-- **The collection-shift test is narrower than the rest**: 300 positives and
-  10,000 negatives, so its recall carries roughly ±6 points. The other rows are
-  >= 14k.
+- **The collection-shift test is narrower than the rest**: its positive count is
+  too small to read without an interval, which the report prints. Every other row
+  is an order of magnitude larger.
 - **Host-level for the main training collection.** Path features are unseen at
   fit time, which is realistic for a feed consumer but limits the claim.
 - **Negatives come from domain lists**, so even with `www.` prefixes they carry

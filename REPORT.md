@@ -21,17 +21,17 @@ collection-shift rows, so it cannot move the other numbers.
 
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.5% | 0.955 | 1.21% |
-| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.3%** | 94.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 58.7% | 0.959 | 2.39% |
-| collection shift, host-only | 12,756 | 10,300 | 2.9% | **42.0%** | 55.5% | 0.806 | 1.01% |
-| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **54.0%** | 61.6% | 0.914 | 1.01% |
+| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
+| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
+| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
+| collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
+| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **48.3%** | 60.4% | 0.930 | 0.95% |
 | impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
 
 
 ## What the numbers say
 
-The baseline reports 63.5% recall and 91.5%
+The baseline reports 63.5% recall and 91.7%
 precision at a 1% false-positive budget, AUC 0.955. Even the leaky
 split is not 99%: this is host-level detection on live collections, not a toy.
 
@@ -40,34 +40,34 @@ ratio varies by an order of magnitude across rows (pos rate column). Compare row
 on recall@1%FPR and AUC; read precision only against its own pos rate.
 
 **Domain leakage costs little.** Domain-disjoint evaluation loses
-1.2 points of recall
-(63.5% -> 62.3%) with AUC essentially unchanged
+0.8 points of recall
+(63.5% -> 62.7%) with AUC essentially unchanged
 (0.955 -> 0.958). Phishing hosts are mostly single-use, so
 there was less to memorise than the usual story assumes.
 
 **Popularity shift spends the false-positive budget.** Training on ranks 1-10k and
 testing on 10k-60k leaves AUC at 0.959 - but the threshold calibrated
-for 1% false positives realises 2.39%, and recall lands at
+for 1% false positives realises 2.29%, and recall lands at
 69.0%. A shipped detector would block roughly 1 in
-42 legitimate popular domains while every ranking
+44 legitimate popular domains while every ranking
 metric looked healthy.
 
 **Collection shift is the largest honest drop.** With negatives taken from
 two independent lists, this row changes the collector on both sides - Phishing
 Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the
-host-only view fixed. AUC falls 0.955 -> 0.806 and
-recall 63.5% -> 42.0%, with a realised FPR of
-1.01% on negatives from a list it never saw.
+host-only view fixed. AUC falls 0.955 -> 0.810 and
+recall 63.5% -> 28.0%, with a realised FPR of
+0.95% on negatives from a list it never saw.
 
 4,992 rows were dropped from the training half because their
 registrable domain appeared in the test half: the collections overlap heavily,
 and a collection split that ignores that is measuring leakage, not transfer.
 
 **Keeping the URL path recovers the ranking, and then some.** The same model,
-scored on full URLs, reaches AUC 0.914 and recall
-54.0% (95% CI 48.3%-59.6% on
+scored on full URLs, reaches AUC 0.930 and recall
+48.3% (95% CI 42.7%-54.0% on
 300 positives), though the realised FPR is still
-1.01%. Path length and lure words carry real signal, which is why
+0.95%. Path length and lure words carry real signal, which is why
 `featurize()` normalises away scheme and trailing slash rather than discarding the
 path.
 
@@ -79,14 +79,14 @@ is the argument for shipping both.
 
 ## Operating point of the shipped detector
 
-`urlish` scores at **0.8889**. The threshold is calibrated for a
-1% budget on a domain-disjoint quarter of the training rows, using the same model
-that is stored in the artifact, so the two cannot disagree. On the domain-disjoint
-test row that pair realises 0.87% false positives at
-63.9% recall; the 1% budget is spent on the calibration set,
-and a different test distribution can spend more.
-Scoring at 0.5 instead would realise a false-positive rate an order of magnitude
-over budget, because a gradient-boosted probability is not a decision threshold.
+`urlish` scores at **0.9062**. The artifact holds the model and
+threshold of the domain-disjoint row: fitted on the training half, calibrated on a
+quarter of it, and measured on the test half that neither half saw. That row reports
+0.79% false positives at 62.7% recall, inside the 1% budget. The
+budget is spent on the calibration set, and a different test distribution can spend
+more.
+Scoring at 0.5 instead would realise a false-positive rate many times over budget,
+because a gradient-boosted probability is not a decision threshold.
 
 ## Limitations
 

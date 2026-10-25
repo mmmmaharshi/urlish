@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from urlish.benchmark import README, RESULTS_END, RESULTS_START, ROOT
+from urlish import ROOT
+from urlish.benchmark import README, RESULTS_END, RESULTS_START
 
 
 def test_readme_table_is_the_report_table() -> None:

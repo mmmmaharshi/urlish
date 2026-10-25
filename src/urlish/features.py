@@ -10,6 +10,7 @@ Two independent signals live here:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,7 @@ from .core import (
     entropy,
     fold,
     has_ip_host,
-    host_of,
+    hostname,
     levenshtein,
     registrable_domain,
     split_url,
@@ -36,11 +37,9 @@ LURE_WORDS = frozenset(
     """.split()
 )
 
-# Longest match wins: "banking" already contains "bank", and counting both made
-# one lure word look like two.
-LURE_CORE = frozenset(
-    word for word in LURE_WORDS if not any(word != other and word in other for other in LURE_WORDS)
-)
+# Longest alternative first, so "banking" counts once instead of also matching
+# "bank". The regex consumes the match, so nested words cannot double count.
+_LURE_RE = re.compile("|".join(sorted(LURE_WORDS, key=len, reverse=True)))
 
 # Cheap-registration TLDs that are over-represented in abuse feeds. This is a
 # feature, not a rule: plenty of legitimate sites use them.
@@ -164,7 +163,7 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
     if brands is None or not url:
         return [], 9
     parts = split_url(url)
-    host = host_of(url)
+    host = hostname(parts)
     reg = registrable_domain(host)
     if not reg:
         return [], 9
@@ -192,6 +191,9 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
 
     return matches, dist
 
+
+# Bumped when the feature vector changes shape; the artifact stores it.
+ARTIFACT_SCHEMA = 1
 
 FEATURE_NAMES = (
     "url_len",
@@ -225,7 +227,7 @@ FEATURE_NAMES = (
 def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     """Fixed-order numeric vector. Names match FEATURE_NAMES."""
     parts = split_url(url)
-    host = host_of(url)
+    host = hostname(parts)
     reg = registrable_domain(host)
     label = reg.split(".")[0] if reg else ""
     canonical = canonicalize(url)
@@ -233,7 +235,7 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     path, _, query = tail.partition("?")
     full = canonical.lower()
 
-    lure_hits = sum(1 for w in LURE_CORE if w in full)
+    lure_hits = len(_LURE_RE.findall(full))
     longest = max((len(t) for t in host.replace(".", " ").split()), default=0)
 
     matches, dist = analyze(url, brands)
@@ -259,7 +261,7 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
         float(_tld(reg) in SUSPICIOUS_TLDS),
         float(len(_tld(reg))),
         float(lure_hits),
-        float(any(w in path for w in LURE_WORDS)),
+        float(_LURE_RE.search(path) is not None),
         float(sum(c.isdigit() for c in host)),
         float(longest),
         min(dist, 3) / 3.0,

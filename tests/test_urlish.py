@@ -90,16 +90,20 @@ def test_impersonation() -> None:
 
 
 def test_parse() -> None:
-    """One parse path: malformed input must not split one way for features and
-    another way for hosts, which is what the duplicated parsers did."""
-    assert split_url("http://[::1").netloc == "", "broken bracket must split empty"
+    """One parse path: malformed input must not become a plausible host."""
+    # A broken IPv6 bracket is malformed for every caller. The feature helper
+    # used to substitute a placeholder domain here, so a host could look real.
+    assert split_url("http://[::1").netloc == ""
     assert host_of("http://[::1") == ""
+    assert canonicalize("http://[::1") == "http://[::1"
+    assert analyze("http://[::1", BRANDS) == ([], 9)
 
-    for url in ("", "not a url", "http://[::1]/", "ftp://x"):
-        assert host_of(url) == (split_url(url).hostname or "").strip().lower().rstrip("."), url
-        featurize(url, BRANDS)
-
+    # Scheme, case and trailing dot normalise once, in core.
+    assert host_of("example.com/path") == "example.com"
+    assert host_of("HTTPS://EXAMPLE.COM./") == "example.com"
+    assert host_of("ftp://x") == "x"
     assert canonicalize("HTTP://EXAMPLE.COM./Path/") == "example.com/Path"
+    assert featurize("ftp://x", BRANDS) == featurize("http://x", BRANDS)
 
 
 def test_features() -> None:
@@ -131,8 +135,11 @@ def test_lure_count_and_port() -> None:
     banking = featurize("http://example.com/banking", BRANDS)
     assert banking[at["lure_count"]] == 1.0, "banking must not also count bank"
 
-    two = featurize("http://example.com/signin-login", BRANDS)
-    assert two[at["lure_count"]] == 2.0, "two distinct lure words must count twice"
+    two = featurize("http://example.com/bank/login", BRANDS)
+    assert two[at["lure_count"]] == 2.0, "bank and login are two lure words"
+
+    two_more = featurize("http://example.com/signin-login", BRANDS)
+    assert two_more[at["lure_count"]] == 2.0, "two distinct lure words must count twice"
 
     assert featurize("http://[::1]/", BRANDS)[at["has_port"]] == 0.0
     assert featurize("http://10.0.0.1:8080/", BRANDS)[at["has_port"]] == 1.0
@@ -190,6 +197,10 @@ def test_loaders() -> None:
         with contextlib.redirect_stderr(io.StringIO()) as err:
             assert load_tranco(good) == [(1, "example.com")]
         assert "skipped 1" in err.getvalue(), err.getvalue()
+
+        missing = Path(tmp) / "absent.csv"
+        with pytest.raises(FileNotFoundError, match="absent.csv"):
+            load_tranco(missing)
 
 
 def test_splits() -> None:

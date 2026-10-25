@@ -6,8 +6,22 @@ visits is unusable, so everything is reported at a fixed false-positive rate.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import numpy as np
 from numpy.typing import ArrayLike
+
+
+class Metrics(TypedDict):
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+    precision: float
+    recall: float
+    fpr: float
+    accuracy: float
+    auc: float
 
 
 def threshold_at_fpr(scores: ArrayLike, y: ArrayLike, target: float = 0.01) -> float:
@@ -24,7 +38,7 @@ def threshold_at_fpr(scores: ArrayLike, y: ArrayLike, target: float = 0.01) -> f
     return float(np.nextafter(negatives[idx], np.inf))
 
 
-def at_threshold(scores: ArrayLike, y: ArrayLike, threshold: float) -> dict[str, float]:
+def at_threshold(scores: ArrayLike, y: ArrayLike, threshold: float) -> Metrics:
     scores = np.asarray(scores, dtype=float)
     y = np.asarray(y)
     pred = scores >= threshold

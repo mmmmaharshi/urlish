@@ -8,16 +8,12 @@ from __future__ import annotations
 
 import pickle
 import sys
-from pathlib import Path
 from typing import Any
 
-from .features import FEATURE_NAMES, analyze, featurize
+from . import ROOT
+from .features import ARTIFACT_SCHEMA, FEATURE_NAMES, analyze, featurize
 
-# Installed editable from src/, so the repo root is two levels above this file.
-ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "artifacts" / "model.pkl"
-
-SCHEMA = 1
 
 
 def validate(bundle: dict[str, Any]) -> None:
@@ -26,8 +22,8 @@ def validate(bundle: dict[str, Any]) -> None:
     A silently stale model scores confidently and wrongly, which is worse than
     refusing to score at all.
     """
-    if bundle.get("schema") != SCHEMA:
-        raise ValueError(f"artifact schema {bundle.get('schema')!r}, expected {SCHEMA}")
+    if bundle.get("schema") != ARTIFACT_SCHEMA:
+        raise ValueError(f"artifact schema {bundle.get('schema')!r}, expected {ARTIFACT_SCHEMA}")
     if bundle.get("feature_names") != list(FEATURE_NAMES):
         raise ValueError("artifact was built with different features")
     if bundle["model"].n_features_in_ != len(FEATURE_NAMES):

@@ -45,9 +45,7 @@ def _dedupe(rows: list[Row]) -> list[Row]:
     return out
 
 
-def _parsed[T](
-    rows: list[T], path: str | Path, expected: str, skipped: int = 0
-) -> list[T]:
+def _require_rows[T](rows: list[T], path: str | Path, expected: str, skipped: int = 0) -> list[T]:
     """Reject an empty collection instead of letting it skew every later number."""
     if not rows:
         raise ValueError(f"{path}: no rows parsed; expected {expected}")
@@ -69,7 +67,7 @@ def load_tranco(path: str | Path) -> list[tuple[int, str]]:
                 rows.append((int(parts[0]), parts[1].strip().lower()))
             else:
                 skipped += 1
-    return _parsed(rows, path, "rank,domain", skipped)
+    return _require_rows(rows, path, "rank,domain", skipped)
 
 
 def load_majestic(path: str | Path) -> list[tuple[int, str]]:
@@ -86,7 +84,7 @@ def load_majestic(path: str | Path) -> list[tuple[int, str]]:
                 rows.append((int(parts[0]), parts[2].strip().lower()))
             else:
                 skipped += 1
-    return _parsed(rows, path, "GlobalRank,Domain CSV with a header", skipped)
+    return _require_rows(rows, path, "GlobalRank,Domain CSV with a header", skipped)
 
 
 def load_url_lines(path: str | Path) -> list[str]:
@@ -105,7 +103,7 @@ def load_url_lines(path: str | Path) -> list[str]:
                 out.append("http://" + line)
             else:
                 skipped += 1
-    return _parsed(out, path, "one URL per line", skipped)
+    return _require_rows(out, path, "one URL per line", skipped)
 
 
 def negative_rows(
@@ -213,9 +211,7 @@ def _by_label(rows: list[Row]) -> dict[int, list[int]]:
     return groups
 
 
-def random_split(
-    rows: list[Row], frac: float, seed: int = 0
-) -> tuple[list[int], list[int]]:
+def random_split(rows: list[Row], frac: float, seed: int = 0) -> tuple[list[int], list[int]]:
     """Stratified random rows. This is the leaky baseline."""
     rng = random.Random(seed)
     test: list[int] = []
@@ -228,9 +224,7 @@ def random_split(
     return train, sorted(test)
 
 
-def group_split(
-    rows: list[Row], frac: float, seed: int = 0
-) -> tuple[list[int], list[int]]:
+def group_split(rows: list[Row], frac: float, seed: int = 0) -> tuple[list[int], list[int]]:
     """No registrable domain appears in both halves."""
     rng = random.Random(seed)
     groups: dict[str, list[int]] = defaultdict(list)
@@ -250,9 +244,7 @@ def group_split(
 
 
 def describe(rows: list[Row]) -> dict[tuple[str, str], dict[str, int]]:
-    out: dict[tuple[str, str], dict[str, int]] = defaultdict(
-        lambda: {"n": 0, "pos": 0, "neg": 0}
-    )
+    out: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"n": 0, "pos": 0, "neg": 0})
     for row in rows:
         bucket = out[(row.collection, row.stratum or "-")]
         bucket["n"] += 1

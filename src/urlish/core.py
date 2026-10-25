@@ -134,14 +134,14 @@ def split_url(url: str) -> SplitResult:
         return urlsplit("")
 
 
+def hostname(parts: SplitResult) -> str:
+    """Normalised host from an already-split URL (GLOSSARY: host)."""
+    return (parts.hostname or "").strip().lower().rstrip(".")
+
+
 def host_of(url: str) -> str:
     """Lowercase hostname of a URL, tolerating scheme-less input."""
-    if not (url or "").strip():
-        return ""
-    try:
-        return (split_url(url).hostname or "").strip().lower().rstrip(".")
-    except ValueError:
-        return ""
+    return hostname(split_url(url))
 
 
 def canonicalize(url: str) -> str:
@@ -150,10 +150,10 @@ def canonicalize(url: str) -> str:
     The scheme carries no signal, and including it teaches the model how the
     dataset was assembled instead of what a URL looks like.
     """
-    host = host_of(url)
+    parts = split_url(url)
+    host = hostname(parts)
     if not host:
         return (url or "").strip().lower()
-    parts = split_url(url)
     path = (parts.path or "").rstrip("/")
     query = f"?{parts.query}" if parts.query else ""
     return f"{host}{path}{query}"

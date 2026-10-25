@@ -11,12 +11,11 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
+from . import ROOT
 from .core import host_of
 from .data import (
     Row,
@@ -31,13 +30,11 @@ from .data import (
     remove_domains,
     select,
 )
-from .features import FEATURE_NAMES, BrandIndex, analyze, featurize
-from .metrics import at_threshold, threshold_at_fpr
+from .features import ARTIFACT_SCHEMA, FEATURE_NAMES, BrandIndex, analyze, featurize
+from .metrics import Metrics, at_threshold, threshold_at_fpr
 
-# Installed editable from src/, so the repo root is two levels above this file.
-ROOT = Path(__file__).resolve().parents[2]
-
-SCHEMA = 1
+# The benchmark runs from a checkout: data/ and artifacts/ are repo-relative, so
+# a wheel install has nothing to read. That is the documented contract.
 SEED = 0
 TARGET_FPR = 0.01
 HEAD_CUT = 10_000
@@ -103,6 +100,49 @@ def calibration_split(
     return split_indices(rows, train_idx, lambda sub: split(sub, 0.25, SEED + 1))
 
 
+def fit_pair(
+    X: np.ndarray, y: np.ndarray, fit_idx: list[int], cal_idx: list[int]
+) -> tuple[HistGradientBoostingClassifier, float]:
+    """Train on the fit half and take the operating point from the calibration half."""
+    model = new_model()
+    model.fit(X[fit_idx], y[fit_idx])
+    threshold = threshold_at_fpr(model.predict_proba(X[cal_idx])[:, 1], y[cal_idx], TARGET_FPR)
+    return model, threshold
+
+
+@dataclass(frozen=True)
+class Result:
+    """One row of the results table."""
+
+    name: str
+    n_train: int
+    n_test: int
+    pos_rate: float
+    tp: int
+    fn: int
+    recall: float
+    precision: float
+    fpr: float
+    auc: float
+
+    @classmethod
+    def measured(
+        cls, name: str, n_train: int, n_test: int, pos_rate: float, metrics: Metrics
+    ) -> Result:
+        return cls(
+            name=name,
+            n_train=n_train,
+            n_test=n_test,
+            pos_rate=pos_rate,
+            tp=metrics["tp"],
+            fn=metrics["fn"],
+            recall=metrics["recall"],
+            precision=metrics["precision"],
+            fpr=metrics["fpr"],
+            auc=metrics["auc"],
+        )
+
+
 def run(
     name: str,
     X: np.ndarray,
@@ -110,32 +150,26 @@ def run(
     fit_idx: list[int],
     cal_idx: list[int],
     test_idx: list[int],
-) -> dict[str, Any]:
-    model = new_model()
-    model.fit(X[fit_idx], y[fit_idx])
-    threshold = threshold_at_fpr(model.predict_proba(X[cal_idx])[:, 1], y[cal_idx], TARGET_FPR)
-    result: dict[str, Any] = at_threshold(
-        model.predict_proba(X[test_idx])[:, 1], y[test_idx], threshold
+) -> Result:
+    model, threshold = fit_pair(X, y, fit_idx, cal_idx)
+    return Result.measured(
+        name,
+        len(fit_idx),
+        len(test_idx),
+        float(y[test_idx].mean()),
+        at_threshold(model.predict_proba(X[test_idx])[:, 1], y[test_idx], threshold),
     )
-    result.update(
-        name=name,
-        n_train=len(fit_idx),
-        n_test=len(test_idx),
-        threshold=threshold,
-        pos_rate=float(y[test_idx].mean()),
-    )
-    return result
 
 
-def table(results: list[dict[str, Any]]) -> str:
+def table(results: list[Result]) -> str:
     head = (
         "| split | n fit | n test | pos rate | recall@1%FPR "
         "| precision@1%FPR | ROC-AUC | realised FPR |\n"
         "|---|---:|---:|---:|---:|---:|---:|---:|\n"
     )
     body = "".join(
-        f"| {r['name']} | {r['n_train']:,} | {r['n_test']:,} | {r['pos_rate']:.1%} | "
-        f"**{r['recall']:.1%}** | {r['precision']:.1%} | {r['auc']:.3f} | {r['fpr']:.2%} |\n"
+        f"| {r.name} | {r.n_train:,} | {r.n_test:,} | {r.pos_rate:.1%} | "
+        f"**{r.recall:.1%}** | {r.precision:.1%} | {r.auc:.3f} | {r.fpr:.2%} |\n"
         for r in results
     )
     return head + body
@@ -179,10 +213,9 @@ def load_dataset() -> tuple[list[Row], BrandIndex]:
 class Experiment:
     """Everything the report renders and the artifact needs."""
 
-    rows: list[Row]
     y: np.ndarray
     summary: dict[tuple[str, str], dict[str, int]]
-    results: list[dict[str, Any]]
+    results: list[Result]
     base_idx: list[int]
     army_idx: list[int]
     head_idx: list[int]
@@ -190,12 +223,11 @@ class Experiment:
     majestic_idx: list[int]
     shipped: HistGradientBoostingClassifier
     shipped_threshold: float
-    ship_test: dict[str, float]
     trained_on: int
     calibrated_on: int
 
 
-def featurise(rows: list[Row], brands: BrandIndex) -> tuple[np.ndarray, np.ndarray]:
+def featurize_rows(rows: list[Row], brands: BrandIndex) -> tuple[np.ndarray, np.ndarray]:
     """Full-URL and host-only views of the same rows."""
     t0 = time.time()
     X = np.asarray([featurize(r.url, brands) for r in rows], dtype=np.float32)
@@ -263,27 +295,22 @@ def run_experiments(
     print("  impersonation rules...", file=sys.stderr)
     imp = np.asarray([impersonation_score(r.url, brands) for r in rows], dtype=float)
     thr_imp = threshold_at_fpr(imp[head_idx], y[head_idx], TARGET_FPR)
-    imp_res: dict[str, Any] = at_threshold(imp[d_test], y[d_test], thr_imp)
-    imp_res.update(
-        name="impersonation rules only (no ML)",
-        n_train=0,
-        n_test=len(d_test),
-        threshold=thr_imp,
-        pos_rate=float(y[d_test].mean()),
+    results.append(
+        Result.measured(
+            "impersonation rules only (no ML)",
+            0,
+            len(d_test),
+            float(y[d_test].mean()),
+            at_threshold(imp[d_test], y[d_test], thr_imp),
+        )
     )
-    results.append(imp_res)
 
-    print("calibrating the shipped model...", file=sys.stderr)
-    ship_fit, ship_cal = calibration_split(rows, base_idx, True)
-    shipped = new_model()
-    shipped.fit(X[ship_fit], y[ship_fit])
-    shipped_threshold = threshold_at_fpr(
-        shipped.predict_proba(X[ship_cal])[:, 1], y[ship_cal], TARGET_FPR
-    )
-    ship_test = at_threshold(shipped.predict_proba(X[d_test])[:, 1], y[d_test], shipped_threshold)
+    print("fitting the shipped model...", file=sys.stderr)
+    # Same fit/calibration pair as the domain-disjoint row, so the artifact's
+    # operating point is that row: measured on test rows the pair never saw.
+    shipped, shipped_threshold = fit_pair(X, y, d_fit, d_cal)
 
     return Experiment(
-        rows=rows,
         y=y,
         summary=describe(rows),
         results=results,
@@ -294,22 +321,21 @@ def run_experiments(
         majestic_idx=majestic_idx,
         shipped=shipped,
         shipped_threshold=shipped_threshold,
-        ship_test=ship_test,
-        trained_on=len(ship_fit),
-        calibrated_on=len(ship_cal),
+        trained_on=len(d_fit),
+        calibrated_on=len(d_cal),
     )
 
 
 def render(exp: Experiment) -> str:
     """The whole report, from the measured results and nothing else."""
-    by = {r["name"]: r for r in exp.results}
+    by = {r.name: r for r in exp.results}
     base = by["random rows (the usual baseline)"]
     dom = by["domain-disjoint"]
     shift = by["popularity shift (head train, tail test)"]
     cross_h = by["collection shift, host-only"]
     cross_full = by["collection shift, as deployed (paths kept)"]
     rules = by["impersonation rules only (no ML)"]
-    lo, hi = wilson(cross_full["tp"], cross_full["tp"] + cross_full["fn"])
+    lo, hi = wilson(cross_full.tp, cross_full.tp + cross_full.fn)
     dropped = len(exp.army_idx) + len(exp.head_idx) - len(exp.c_train)
     in_base = len(exp.base_idx)
     y = exp.y
@@ -331,53 +357,53 @@ def render(exp: Experiment) -> str:
         "## Results\n",
         table(exp.results),
         "\n## What the numbers say\n",
-        f"The baseline reports {base['recall']:.1%} recall and {base['precision']:.1%}\n"
-        f"precision at a 1% false-positive budget, AUC {base['auc']:.3f}. Even the leaky\n"
+        f"The baseline reports {base.recall:.1%} recall and {base.precision:.1%}\n"
+        f"precision at a 1% false-positive budget, AUC {base.auc:.3f}. Even the leaky\n"
         "split is not 99%: this is host-level detection on live collections, not a toy.\n",
         "Precision depends on how many positives the test set happens to contain, and that\n"
         "ratio varies by an order of magnitude across rows (pos rate column). Compare rows\n"
         "on recall@1%FPR and AUC; read precision only against its own pos rate.\n",
         f"**Domain leakage costs little.** Domain-disjoint evaluation loses\n"
-        f"{100 * (base['recall'] - dom['recall']):.1f} points of recall\n"
-        f"({base['recall']:.1%} -> {dom['recall']:.1%}) with AUC essentially unchanged\n"
-        f"({base['auc']:.3f} -> {dom['auc']:.3f}). Phishing hosts are mostly single-use, so\n"
+        f"{100 * (base.recall - dom.recall):.1f} points of recall\n"
+        f"({base.recall:.1%} -> {dom.recall:.1%}) with AUC essentially unchanged\n"
+        f"({base.auc:.3f} -> {dom.auc:.3f}). Phishing hosts are mostly single-use, so\n"
         "there was less to memorise than the usual story assumes.\n",
         f"**Popularity shift spends the false-positive budget.** Training on ranks 1-10k and\n"
-        f"testing on 10k-60k leaves AUC at {shift['auc']:.3f} - but the threshold calibrated\n"
-        f"for 1% false positives realises {shift['fpr']:.2%}, and recall lands at\n"
-        f"{shift['recall']:.1%}. A shipped detector would block roughly 1 in\n"
-        f"{1 / max(shift['fpr'], 1e-9):.0f} legitimate popular domains while every ranking\n"
+        f"testing on 10k-60k leaves AUC at {shift.auc:.3f} - but the threshold calibrated\n"
+        f"for 1% false positives realises {shift.fpr:.2%}, and recall lands at\n"
+        f"{shift.recall:.1%}. A shipped detector would block roughly 1 in\n"
+        f"{1 / max(shift.fpr, 1e-9):.0f} legitimate popular domains while every ranking\n"
         "metric looked healthy.\n",
         f"**Collection shift is the largest honest drop.** With negatives taken from\n"
         f"two independent lists, this row changes the collector on both sides - Phishing\n"
         f"Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the\n"
-        f"host-only view fixed. AUC falls {base['auc']:.3f} -> {cross_h['auc']:.3f} and\n"
-        f"recall {base['recall']:.1%} -> {cross_h['recall']:.1%}, with a realised FPR of\n"
-        f"{cross_h['fpr']:.2%} on negatives from a list it never saw.\n",
+        f"host-only view fixed. AUC falls {base.auc:.3f} -> {cross_h.auc:.3f} and\n"
+        f"recall {base.recall:.1%} -> {cross_h.recall:.1%}, with a realised FPR of\n"
+        f"{cross_h.fpr:.2%} on negatives from a list it never saw.\n",
         f"{dropped:,} rows were dropped from the training half because their\n"
         "registrable domain appeared in the test half: the collections overlap heavily,\n"
         "and a collection split that ignores that is measuring leakage, not transfer.\n",
         f"**Keeping the URL path recovers the ranking, and then some.** The same model,\n"
-        f"scored on full URLs, reaches AUC {cross_full['auc']:.3f} and recall\n"
-        f"{cross_full['recall']:.1%} (95% CI {lo:.1%}-{hi:.1%} on\n"
-        f"{cross_full['tp'] + cross_full['fn']} positives), though the realised FPR is still\n"
-        f"{cross_full['fpr']:.2%}. Path length and lure words carry real signal, which is why\n"
+        f"scored on full URLs, reaches AUC {cross_full.auc:.3f} and recall\n"
+        f"{cross_full.recall:.1%} (95% CI {lo:.1%}-{hi:.1%} on\n"
+        f"{cross_full.tp + cross_full.fn} positives), though the realised FPR is still\n"
+        f"{cross_full.fpr:.2%}. Path length and lure words carry real signal, which is why\n"
         "`featurize()` normalises away scheme and trailing slash rather than discarding the\n"
         "path.\n",
-        f"**Brand rules are precise but narrow.** No training data, {rules['precision']:.1%}\n"
-        f"precision at {rules['fpr']:.2%} FPR, but {rules['recall']:.1%} recall. Most phishing\n"
+        f"**Brand rules are precise but narrow.** No training data, {rules.precision:.1%}\n"
+        f"precision at {rules.fpr:.2%} FPR, but {rules.recall:.1%} recall. Most phishing\n"
         "hosts do not impersonate a brand by string similarity; they are throwaway domains\n"
         "on cheap TLDs. Rules and classifiers cover different halves of the problem, which\n"
         "is the argument for shipping both.\n",
         "## Operating point of the shipped detector\n",
-        f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The threshold is calibrated for a\n"
-        "1% budget on a domain-disjoint quarter of the training rows, using the same model\n"
-        "that is stored in the artifact, so the two cannot disagree. On the domain-disjoint\n"
-        f"test row that pair realises {exp.ship_test['fpr']:.2%} false positives at\n"
-        f"{exp.ship_test['recall']:.1%} recall; the 1% budget is spent on the calibration set,\n"
-        "and a different test distribution can spend more.\n"
-        "Scoring at 0.5 instead would realise a false-positive rate an order of magnitude\n"
-        "over budget, because a gradient-boosted probability is not a decision threshold.\n",
+        f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The artifact holds the model and\n"
+        "threshold of the domain-disjoint row: fitted on the training half, calibrated on a\n"
+        "quarter of it, and measured on the test half that neither half saw. That row reports\n"
+        f"{dom.fpr:.2%} false positives at {dom.recall:.1%} recall, inside the 1% budget. The\n"
+        "budget is spent on the calibration set, and a different test distribution can spend\n"
+        "more.\n"
+        "Scoring at 0.5 instead would realise a false-positive rate many times over budget,\n"
+        "because a gradient-boosted probability is not a decision threshold.\n",
         "## Limitations\n",
         "- Single snapshot. No dates in these collections, so there is no temporal split. A\n"
         "  temporal holdout is the missing experiment and is strictly harder than any row\n"
@@ -385,8 +411,8 @@ def render(exp: Experiment) -> str:
         "- Labels are collection membership, not ground truth. Collections contain dead,\n"
         "  parked and occasionally mislabelled hosts, and a popular domain is not a\n"
         "  guarantee of safety.\n",
-        f"- The collection-shift test has {cross_full['tp'] + cross_full['fn']} positives and\n"
-        f"  {cross_full['n_test'] - cross_full['tp'] - cross_full['fn']:,} negatives, hence\n"
+        f"- The collection-shift test has {cross_full.tp + cross_full.fn} positives and\n"
+        f"  {cross_full.n_test - cross_full.tp - cross_full.fn:,} negatives, hence\n"
         "  the interval above. Every other split is >= 14k rows.\n",
         "- The training collection (`phishing_army`) is host-only, so path features are\n"
         "  unseen at fit time. That is the realistic case for a collection consumer, not a\n"
@@ -410,7 +436,7 @@ def write_artifact(exp: Experiment, brands: BrandIndex) -> None:
     with open(ARTIFACTS / "model.pkl", "wb") as fh:
         pickle.dump(
             {
-                "schema": SCHEMA,
+                "schema": ARTIFACT_SCHEMA,
                 "feature_names": list(FEATURE_NAMES),
                 "model": exp.shipped,
                 "brands": brands,
@@ -437,7 +463,7 @@ def update_readme(results: str) -> None:
 def main() -> int:
     rows, brands = load_dataset()
     y = np.array([r.y for r in rows], dtype=int)
-    X, Xh = featurise(rows, brands)
+    X, Xh = featurize_rows(rows, brands)
     exp = run_experiments(rows, y, X, Xh, brands)
     report = render(exp)
     (ROOT / "REPORT.md").write_text(report, encoding="utf-8")
