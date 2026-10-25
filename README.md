@@ -55,6 +55,7 @@ uv run urlish-benchmark                 # ~50 s, writes REPORT.md, README table,
 uv run pytest -q                        # offline checks; adds the artifact check once trained
 uv run urlish https://paypal.com.secure-login.xyz/verify
 uv run urlish --train                   # rebuild the artifact before scoring, if needed
+git config core.hooksPath .githooks     # pre-push runs the full suite; CI cannot
 ```
 
 The threshold is calibrated for the 1% budget and stored in the model artifact. It

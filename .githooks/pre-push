@@ -1,0 +1,5 @@
+#!/bin/sh
+# CI has no data/ or artifacts/, so tests/test_artifact.py skips there and the
+# shipped model's contract is verified nowhere but a checkout. Run the full suite
+# here, where both exist.
+uv run pytest -q || exit 1
