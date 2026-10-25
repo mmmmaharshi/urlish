@@ -117,7 +117,7 @@ over budget, because a gradient-boosted probability is not a decision threshold.
 
 ```
 uv sync
-uv run python benchmark.py
+uv run urlish-benchmark
 uv run python tests/test_selfcheck.py
 ```
 

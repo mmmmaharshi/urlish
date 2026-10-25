@@ -1,35 +1,37 @@
 """Score URLs from the command line.
 
-python predict.py https://paypa1.com/login
-python predict.py --train          # rebuild artifacts/model.pkl first
+urlish https://paypa1.com/login
+urlish --train          # rebuild the model artifact first
 """
 
 from __future__ import annotations
 
 import pickle
-import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+from .features import analyze, featurize
 
-from urlish.features import analyze, featurize  # noqa: E402
-
+# Installed editable from src/, so the repo root is two levels above this file.
+ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "artifacts" / "model.pkl"
 
 
-def load():
+def load() -> dict[str, Any]:
     if not ARTIFACTS.exists():
-        print("no model yet - run `python benchmark.py` first", file=sys.stderr)
+        print("no model yet - run `uv run urlish-benchmark` first", file=sys.stderr)
         raise SystemExit(1)
     with open(ARTIFACTS, "rb") as fh:
         return pickle.load(fh)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
     if "--train" in argv:
-        return subprocess.call([sys.executable, str(ROOT / "benchmark.py")])
+        from .benchmark import main as benchmark_main
+
+        return benchmark_main()
 
     urls = [a for a in argv if not a.startswith("--")]
     if not urls:
@@ -51,8 +53,7 @@ def main(argv: list[str]) -> int:
         if matches:
             for m in matches:
                 print(
-                    f"  impersonates {m.brand} ({m.primary}) - {m.kind}, "
-                    f"edit distance {m.distance}"
+                    f"  impersonates {m.brand} ({m.primary}) - {m.kind}, edit distance {m.distance}"
                 )
         else:
             print("  impersonation  no brand lookalike signal")
@@ -60,4 +61,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())

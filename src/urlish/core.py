@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 # shortcut: a ~70-entry Public Suffix List subset covering the common ccTLD
 # second-level suffixes. Only affects `registrable_domain`. Swap in a bundled
@@ -117,16 +117,29 @@ _HOMO = {
 }
 
 
-def host_of(url: str) -> str:
-    """Lowercase hostname of a URL, tolerating scheme-less input."""
+def split_url(url: str) -> SplitResult:
+    """Split a URL, adding a scheme when missing. Never raises.
+
+    Malformed input splits to an empty result so every caller degrades the same
+    way instead of each inventing its own fallback.
+    """
     raw = (url or "").strip()
     if not raw:
-        return ""
+        return urlsplit("")
     if "://" not in raw:
         raw = "http://" + raw
     try:
-        parts = urlsplit(raw)
-        return (parts.hostname or "").strip().lower().rstrip(".")
+        return urlsplit(raw)
+    except ValueError:
+        return urlsplit("")
+
+
+def host_of(url: str) -> str:
+    """Lowercase hostname of a URL, tolerating scheme-less input."""
+    if not (url or "").strip():
+        return ""
+    try:
+        return (split_url(url).hostname or "").strip().lower().rstrip(".")
     except ValueError:
         return ""
 
@@ -140,11 +153,7 @@ def canonicalize(url: str) -> str:
     host = host_of(url)
     if not host:
         return (url or "").strip().lower()
-    raw = url if "://" in url else "http://" + url
-    try:
-        parts = urlsplit(raw)
-    except ValueError:
-        return host
+    parts = split_url(url)
     path = (parts.path or "").rstrip("/")
     query = f"?{parts.query}" if parts.query else ""
     return f"{host}{path}{query}"

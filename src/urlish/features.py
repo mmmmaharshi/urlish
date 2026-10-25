@@ -10,8 +10,9 @@ Two independent signals live here:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from pathlib import Path
 
 from .core import (
     canonicalize,
@@ -22,6 +23,7 @@ from .core import (
     host_of,
     levenshtein,
     registrable_domain,
+    split_url,
     tokenize,
 )
 
@@ -77,7 +79,7 @@ class BrandIndex:
     brand itself.
     """
 
-    def __init__(self, entries, max_dist: int = 2) -> None:
+    def __init__(self, entries: Iterable[tuple[str, str]], max_dist: int = 2) -> None:
         self.max_dist = max_dist
         self.primary: dict[str, str] = {}
         self.labels: frozenset[str] = frozenset()
@@ -93,8 +95,8 @@ class BrandIndex:
         self._table = {k: tuple(v) for k, v in table.items()}
 
     @classmethod
-    def from_tranco(cls, path, top: int = 2000, max_dist: int = 2) -> "BrandIndex":
-        entries = []
+    def from_tranco(cls, path: str | Path, top: int = 2000, max_dist: int = 2) -> BrandIndex:
+        entries: list[tuple[str, str]] = []
         with open(path, encoding="utf-8") as fh:
             for line in fh:
                 parts = line.strip().split(",")
@@ -134,14 +136,6 @@ def _tld(reg: str) -> str:
     return reg.rsplit(".", 1)[-1] if "." in reg else ""
 
 
-def _url_parts(url: str):
-    raw = url if "://" in url else "http://" + url
-    try:
-        return urlsplit(raw)
-    except ValueError:
-        return urlsplit("http://invalid.invalid")
-
-
 def explain(url: str, brands: BrandIndex | None) -> list[BrandMatch]:
     """Deterministic impersonation signals. No model, no training data."""
     return analyze(url, brands)[0]
@@ -154,7 +148,7 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
     """
     if brands is None or not url:
         return [], 9
-    parts = _url_parts(url)
+    parts = split_url(url)
     host = host_of(url)
     reg = registrable_domain(host)
     if not reg:
@@ -178,9 +172,7 @@ def analyze(url: str, brands: BrandIndex | None) -> tuple[list[BrandMatch], int]
     for tok in tokenize(haystack):
         folded_tok = fold(tok)
         if folded_tok in brands.labels and brands.primary[folded_tok] != reg:
-            matches.append(
-                BrandMatch(folded_tok, brands.primary[folded_tok], "brand-token", 0)
-            )
+            matches.append(BrandMatch(folded_tok, brands.primary[folded_tok], "brand-token", 0))
             break
 
     return matches, dist
@@ -217,7 +209,7 @@ FEATURE_NAMES = (
 
 def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     """Fixed-order numeric vector. Names match FEATURE_NAMES."""
-    parts = _url_parts(url)
+    parts = split_url(url)
     host = host_of(url)
     reg = registrable_domain(host)
     label = reg.split(".")[0] if reg else ""

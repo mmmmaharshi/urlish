@@ -7,9 +7,10 @@ visits is unusable, so everything is reported at a fixed false-positive rate.
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 
-def threshold_at_fpr(scores, y, target: float = 0.01) -> float:
+def threshold_at_fpr(scores: ArrayLike, y: ArrayLike, target: float = 0.01) -> float:
     """Highest threshold whose false-positive rate on this set is <= target."""
     scores = np.asarray(scores, dtype=float)
     y = np.asarray(y)
@@ -23,7 +24,7 @@ def threshold_at_fpr(scores, y, target: float = 0.01) -> float:
     return float(np.nextafter(negatives[idx], np.inf))
 
 
-def at_threshold(scores, y, threshold: float) -> dict[str, float]:
+def at_threshold(scores: ArrayLike, y: ArrayLike, threshold: float) -> dict[str, float]:
     scores = np.asarray(scores, dtype=float)
     y = np.asarray(y)
     pred = scores >= threshold

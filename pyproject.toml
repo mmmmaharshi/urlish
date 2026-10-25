@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "urlish"
 version = "0.1.0"
@@ -9,6 +13,33 @@ dependencies = [
     "scikit-learn==1.9.1",
 ]
 
-[tool.uv]
-# Scripts put src/ on sys.path themselves, so no install step is needed.
-package = false
+[project.scripts]
+urlish = "urlish.cli:main"
+urlish-benchmark = "urlish.benchmark:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.15",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/urlish"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true

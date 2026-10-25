@@ -46,9 +46,9 @@ Full numbers and method: [REPORT.md](REPORT.md).
 
 ```bash
 uv sync                                 # creates .venv from uv.lock
-uv run python benchmark.py              # ~50 s, writes REPORT.md and artifacts/
-uv run python tests/test_selfcheck.py   # offline, 7 checks
-uv run python predict.py https://paypal.com.secure-login.xyz/verify
+uv run urlish-benchmark                 # ~50 s, writes REPORT.md and artifacts/
+uv run python tests/test_selfcheck.py   # offline, 9 checks
+uv run urlish https://paypal.com.secure-login.xyz/verify
 ```
 
 ```

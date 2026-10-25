@@ -7,6 +7,7 @@ from .core import (
     host_of,
     levenshtein,
     registrable_domain,
+    split_url,
     tokenize,
 )
 from .features import FEATURE_NAMES, BrandIndex, analyze, explain, featurize
@@ -23,5 +24,6 @@ __all__ = [
     "host_of",
     "levenshtein",
     "registrable_domain",
+    "split_url",
     "tokenize",
 ]

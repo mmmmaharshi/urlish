@@ -9,29 +9,32 @@ import math
 import pickle
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
-
-from urlish.core import host_of  # noqa: E402
-from urlish.data import (  # noqa: E402
-    negative_rows,
+from .core import host_of
+from .data import (
+    Row,
     build_dataset,
     describe,
     group_split,
     load_majestic,
     load_tranco,
     load_url_lines,
+    negative_rows,
     random_split,
     remove_domains,
     select,
 )
-from urlish.features import BrandIndex, analyze, featurize  # noqa: E402
-from urlish.metrics import at_threshold, threshold_at_fpr  # noqa: E402
+from .features import BrandIndex, analyze, featurize
+from .metrics import at_threshold, threshold_at_fpr
+
+# Installed editable from src/, so the repo root is two levels above this file.
+ROOT = Path(__file__).resolve().parents[2]
 
 SEED = 0
 TARGET_FPR = 0.01
@@ -76,7 +79,9 @@ def new_model() -> HistGradientBoostingClassifier:
     )
 
 
-def calibration_split(rows, train_idx, grouped: bool):
+def calibration_split(
+    rows: list[Row], train_idx: list[int], grouped: bool
+) -> tuple[list[int], list[int]]:
     """Threshold is chosen on held-out training data, never on the test set."""
     sub = [rows[i] for i in train_idx]
     split = group_split if grouped else random_split
@@ -84,13 +89,18 @@ def calibration_split(rows, train_idx, grouped: bool):
     return [train_idx[i] for i in fit], [train_idx[i] for i in cal]
 
 
-def run(name, X, y, fit_idx, cal_idx, test_idx):
+def run(
+    name: str,
+    X: np.ndarray,
+    y: np.ndarray,
+    fit_idx: list[int],
+    cal_idx: list[int],
+    test_idx: list[int],
+) -> dict[str, Any]:
     model = new_model()
     model.fit(X[fit_idx], y[fit_idx])
-    threshold = threshold_at_fpr(
-        model.predict_proba(X[cal_idx])[:, 1], y[cal_idx], TARGET_FPR
-    )
-    result = at_threshold(
+    threshold = threshold_at_fpr(model.predict_proba(X[cal_idx])[:, 1], y[cal_idx], TARGET_FPR)
+    result: dict[str, Any] = at_threshold(
         model.predict_proba(X[test_idx])[:, 1], y[test_idx], threshold
     )
     result.update(
@@ -103,9 +113,10 @@ def run(name, X, y, fit_idx, cal_idx, test_idx):
     return result
 
 
-def table(results) -> str:
+def table(results: list[dict[str, Any]]) -> str:
     head = (
-        "| split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |\n"
+        "| split | n fit | n test | pos rate | recall@1%FPR "
+        "| precision@1%FPR | ROC-AUC | realised FPR |\n"
         "|---|---:|---:|---:|---:|---:|---:|---:|\n"
     )
     body = "".join(
@@ -169,21 +180,21 @@ def main() -> int:
     openphish_idx = select(rows, collections={"openphish"})
     majestic_idx = select(rows, collections={"majestic"}, stratum="head", label=0)
 
-    def split_base(fn):
+    def split_base(
+        fn: Callable[[list[Row]], tuple[list[int], list[int]]],
+    ) -> tuple[list[int], list[int]]:
         """Run a split over the main dataset and map indices back to `rows`."""
         sub = [rows[i] for i in base_idx]
         train, test = fn(sub)
         return [base_idx[i] for i in train], [base_idx[i] for i in test]
 
-    def negative_shift():
+    def negative_shift() -> tuple[list[int], list[int]]:
         """Train against popular domains, test against the long tail."""
         sub = [rows[i] for i in pos_idx]
         train_p, test_p = group_split(sub, 0.2, SEED)
-        return [pos_idx[i] for i in train_p] + head_idx, [
-            pos_idx[i] for i in test_p
-        ] + tail_idx
+        return [pos_idx[i] for i in train_p] + head_idx, [pos_idx[i] for i in test_p] + tail_idx
 
-    def collection_shift():
+    def collection_shift() -> tuple[list[int], list[int]]:
         """Vary the collection, hold the popularity stratum fixed.
 
         Positives move from one phishing collector to another, negatives from one
@@ -210,23 +221,19 @@ def main() -> int:
     print("  popularity shift (head train, tail test)...", file=sys.stderr)
     s_train, s_test = negative_shift()
     s_fit, s_cal = calibration_split(rows, s_train, True)
-    results.append(
-        run("popularity shift (head train, tail test)", X, y, s_fit, s_cal, s_test)
-    )
+    results.append(run("popularity shift (head train, tail test)", X, y, s_fit, s_cal, s_test))
 
     print("  collection shift, host-only...", file=sys.stderr)
     c_train, c_test = collection_shift()
     c_fit, c_cal = calibration_split(rows, c_train, True)
     results.append(run("collection shift, host-only", Xh, y, c_fit, c_cal, c_test))
     print("  collection shift, as deployed (paths kept)...", file=sys.stderr)
-    results.append(
-        run("collection shift, as deployed (paths kept)", X, y, c_fit, c_cal, c_test)
-    )
+    results.append(run("collection shift, as deployed (paths kept)", X, y, c_fit, c_cal, c_test))
 
     print("  impersonation rules...", file=sys.stderr)
     imp = np.asarray([impersonation_score(r.url, brands) for r in rows], dtype=float)
     thr_imp = threshold_at_fpr(imp[head_idx], y[head_idx], TARGET_FPR)
-    imp_res = at_threshold(imp[d_test], y[d_test], thr_imp)
+    imp_res: dict[str, Any] = at_threshold(imp[d_test], y[d_test], thr_imp)
     imp_res.update(
         name="impersonation rules only (no ML)",
         n_train=0,
@@ -263,9 +270,7 @@ def main() -> int:
         "| collection | stratum | rows | positives | negatives |\n|---|---|---:|---:|---:|",
     ]
     for (collection, stratum), s in sorted(summary.items()):
-        lines.append(
-            f"| {collection} | {stratum} | {s['n']:,} | {s['pos']:,} | {s['neg']:,} |"
-        )
+        lines.append(f"| {collection} | {stratum} | {s['n']:,} | {s['pos']:,} | {s['neg']:,} |")
     in_base = len(base_idx)
     lines += [
         f"| **main dataset** | | **{in_base:,}** | **{int(y[base_idx].sum()):,}** | "
@@ -339,7 +344,7 @@ def main() -> int:
         "- Brands come from Tranco, which over-represents Western sites. Impersonation of\n"
         "  regional brands is under-covered.\n",
         "\n## Reproduce\n",
-        "```\nuv sync\nuv run python benchmark.py\nuv run python tests/test_selfcheck.py\n```\n",
+        "```\nuv sync\nuv run urlish-benchmark\nuv run python tests/test_selfcheck.py\n```\n",
     ]
 
     report = "\n".join(lines) + "\n"

@@ -5,22 +5,19 @@ python tests/test_selfcheck.py
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import numpy as np
 
-import numpy as np  # noqa: E402
-
-from urlish.data import (  # noqa: E402
+from urlish.data import (
     Row,
     group_split,
     random_split,
     remove_domains,
     select,
 )
-from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize  # noqa: E402
-from urlish.metrics import at_threshold, threshold_at_fpr  # noqa: E402
+from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize
+from urlish.metrics import at_threshold, threshold_at_fpr
 
 BRANDS = BrandIndex(
     [
@@ -81,6 +78,21 @@ def check_impersonation() -> None:
 
     _, typo = analyze("http://gooogle.com/", BRANDS)
     assert typo == 1, typo
+
+
+def check_parse() -> None:
+    """One parse path: malformed input must not split one way for features and
+    another way for hosts, which is what the duplicated parsers did."""
+    from urlish.core import canonicalize, host_of, split_url
+
+    assert split_url("http://[::1").netloc == "", "broken bracket must split empty"
+    assert host_of("http://[::1") == ""
+
+    for url in ("", "not a url", "http://[::1]/", "ftp://x"):
+        assert host_of(url) == (split_url(url).hostname or "").strip().lower().rstrip("."), url
+        featurize(url, BRANDS)
+
+    assert canonicalize("HTTP://EXAMPLE.COM./Path/") == "example.com/Path"
 
 
 def check_features() -> None:
@@ -193,6 +205,7 @@ def main() -> int:
         check_domains,
         check_folding,
         check_impersonation,
+        check_parse,
         check_features,
         check_threshold,
         check_provenance,
