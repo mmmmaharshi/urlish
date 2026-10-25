@@ -127,9 +127,8 @@ def table(results: list[dict[str, Any]]) -> str:
     return head + body
 
 
-def main() -> int:
-    ARTIFACTS.mkdir(exist_ok=True)
-
+def load_dataset() -> tuple[list[Row], BrandIndex]:
+    """Assemble the rows and the brand index exactly as the report does."""
     print("loading collections...", file=sys.stderr)
     tranco = load_tranco(DATA / "tranco.csv")
     majestic = load_majestic(DATA / "majestic.csv")
@@ -157,11 +156,15 @@ def main() -> int:
         cap=60_000,
         strata=("head",),
     )
-    rows = base_rows + majestic_rows
-    y = np.array([r.y for r in rows], dtype=int)
-
     print("building brand index...", file=sys.stderr)
     brands = BrandIndex.from_tranco(DATA / "tranco.csv", top=2000)
+    return base_rows + majestic_rows, brands
+
+
+def main() -> int:
+    ARTIFACTS.mkdir(exist_ok=True)
+    rows, brands = load_dataset()
+    y = np.array([r.y for r in rows], dtype=int)
 
     t0 = time.time()
     X = np.asarray([featurize(r.url, brands) for r in rows], dtype=np.float32)
@@ -255,11 +258,12 @@ def main() -> int:
 
     print("calibrating the shipped model...", file=sys.stderr)
     ship_fit, ship_cal = calibration_split(rows, base_idx, True)
-    probe = new_model()
-    probe.fit(X[ship_fit], y[ship_fit])
+    shipped = new_model()
+    shipped.fit(X[ship_fit], y[ship_fit])
     shipped_threshold = threshold_at_fpr(
-        probe.predict_proba(X[ship_cal])[:, 1], y[ship_cal], TARGET_FPR
+        shipped.predict_proba(X[ship_cal])[:, 1], y[ship_cal], TARGET_FPR
     )
+    ship_test = at_threshold(shipped.predict_proba(X[d_test])[:, 1], y[d_test], shipped_threshold)
 
     summary = describe(rows)
     lines = [
@@ -319,8 +323,12 @@ def main() -> int:
         "on cheap TLDs. Rules and classifiers cover different halves of the problem, which\n"
         "is the argument for shipping both.\n",
         "## Operating point of the shipped detector\n",
-        f"`predict.py` scores at **{shipped_threshold:.4f}**, calibrated for a 1% budget on a\n"
-        "domain-disjoint quarter of the training rows and stored in the model artifact.\n"
+        f"`urlish` scores at **{shipped_threshold:.4f}**. The threshold is calibrated for a\n"
+        "1% budget on a domain-disjoint quarter of the training rows, using the same model\n"
+        "that is stored in the artifact, so the two cannot disagree. On the domain-disjoint\n"
+        f"test row that pair realises {ship_test['fpr']:.2%} false positives at\n"
+        f"{ship_test['recall']:.1%} recall; the 1% budget is spent on the calibration set,\n"
+        "and a different test distribution can spend more.\n"
         "Scoring at 0.5 instead would realise a false-positive rate an order of magnitude\n"
         "over budget, because a gradient-boosted probability is not a decision threshold.\n",
         "## Limitations\n",
@@ -351,16 +359,15 @@ def main() -> int:
     (ROOT / "REPORT.md").write_text(report, encoding="utf-8")
     print("\n" + report)
 
-    print("fitting final model...", file=sys.stderr)
-    final = new_model()
-    final.fit(X[base_idx], y[base_idx])
+    print("writing the shipped artifact...", file=sys.stderr)
     with open(ARTIFACTS / "model.pkl", "wb") as fh:
         pickle.dump(
             {
-                "model": final,
+                "model": shipped,
                 "brands": brands,
                 "threshold": shipped_threshold,
-                "trained_on": in_base,
+                "trained_on": len(ship_fit),
+                "calibrated_on": len(ship_cal),
             },
             fh,
         )

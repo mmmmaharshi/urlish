@@ -79,8 +79,12 @@ is the argument for shipping both.
 
 ## Operating point of the shipped detector
 
-`predict.py` scores at **0.8870**, calibrated for a 1% budget on a
-domain-disjoint quarter of the training rows and stored in the model artifact.
+`urlish` scores at **0.8870**. The threshold is calibrated for a
+1% budget on a domain-disjoint quarter of the training rows, using the same model
+that is stored in the artifact, so the two cannot disagree. On the domain-disjoint
+test row that pair realises 0.93% false positives at
+65.0% recall; the 1% budget is spent on the calibration set,
+and a different test distribution can spend more.
 Scoring at 0.5 instead would realise a false-positive rate an order of magnitude
 over budget, because a gradient-boosted probability is not a decision threshold.
 
