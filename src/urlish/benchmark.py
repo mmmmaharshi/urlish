@@ -10,6 +10,7 @@ import pickle
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -80,14 +81,23 @@ def new_model() -> HistGradientBoostingClassifier:
     )
 
 
+def split_indices(
+    rows: list[Row],
+    idxs: list[int],
+    fn: Callable[[list[Row]], tuple[list[int], list[int]]],
+) -> tuple[list[int], list[int]]:
+    """Run a split over `idxs` and map the halves back to positions in `rows`."""
+    sub = [rows[i] for i in idxs]
+    first, second = fn(sub)
+    return [idxs[i] for i in first], [idxs[i] for i in second]
+
+
 def calibration_split(
     rows: list[Row], train_idx: list[int], grouped: bool
 ) -> tuple[list[int], list[int]]:
     """Threshold is chosen on held-out training data, never on the test set."""
-    sub = [rows[i] for i in train_idx]
     split = group_split if grouped else random_split
-    fit, cal = split(sub, 0.25, SEED + 1)
-    return [train_idx[i] for i in fit], [train_idx[i] for i in cal]
+    return split_indices(rows, train_idx, lambda sub: split(sub, 0.25, SEED + 1))
 
 
 def run(
@@ -162,11 +172,28 @@ def load_dataset() -> tuple[list[Row], BrandIndex]:
     return base_rows + majestic_rows, brands
 
 
-def main() -> int:
-    ARTIFACTS.mkdir(exist_ok=True)
-    rows, brands = load_dataset()
-    y = np.array([r.y for r in rows], dtype=int)
+@dataclass(frozen=True)
+class Experiment:
+    """Everything the report renders and the artifact needs."""
 
+    rows: list[Row]
+    y: np.ndarray
+    summary: dict[tuple[str, str], dict[str, int]]
+    results: list[dict[str, Any]]
+    base_idx: list[int]
+    army_idx: list[int]
+    head_idx: list[int]
+    c_train: list[int]
+    majestic_idx: list[int]
+    shipped: HistGradientBoostingClassifier
+    shipped_threshold: float
+    ship_test: dict[str, float]
+    trained_on: int
+    calibrated_on: int
+
+
+def featurise(rows: list[Row], brands: BrandIndex) -> tuple[np.ndarray, np.ndarray]:
+    """Full-URL and host-only views of the same rows."""
     t0 = time.time()
     X = np.asarray([featurize(r.url, brands) for r in rows], dtype=np.float32)
     host_urls = [f"http://{host_of(r.url)}/" for r in rows]
@@ -175,7 +202,12 @@ def main() -> int:
         f"featurised {len(rows):,} rows twice in {time.time() - t0:.1f}s",
         file=sys.stderr,
     )
+    return X, Xh
 
+
+def run_experiments(
+    rows: list[Row], y: np.ndarray, X: np.ndarray, Xh: np.ndarray, brands: BrandIndex
+) -> Experiment:
     base_idx = select(rows, collections={"phishing_army", "openphish", "tranco"})
     pos_idx = select(rows, label=1)
     head_idx = select(rows, collections={"tranco"}, stratum="head", label=0)
@@ -184,19 +216,10 @@ def main() -> int:
     openphish_idx = select(rows, collections={"openphish"})
     majestic_idx = select(rows, collections={"majestic"}, stratum="head", label=0)
 
-    def split_base(
-        fn: Callable[[list[Row]], tuple[list[int], list[int]]],
-    ) -> tuple[list[int], list[int]]:
-        """Run a split over the main dataset and map indices back to `rows`."""
-        sub = [rows[i] for i in base_idx]
-        train, test = fn(sub)
-        return [base_idx[i] for i in train], [base_idx[i] for i in test]
-
     def negative_shift() -> tuple[list[int], list[int]]:
         """Train against popular domains, test against the long tail."""
-        sub = [rows[i] for i in pos_idx]
-        train_p, test_p = group_split(sub, 0.2, SEED)
-        return [pos_idx[i] for i in train_p] + head_idx, [pos_idx[i] for i in test_p] + tail_idx
+        train_p, test_p = split_indices(rows, pos_idx, lambda sub: group_split(sub, 0.2, SEED))
+        return train_p + head_idx, test_p + tail_idx
 
     def collection_shift() -> tuple[list[int], list[int]]:
         """Vary the collection, hold the popularity stratum fixed.
@@ -213,12 +236,12 @@ def main() -> int:
         return remove_domains(train, rows, shared), test
 
     print("  random rows (the usual baseline)...", file=sys.stderr)
-    r_train, r_test = split_base(lambda s: random_split(s, 0.2, SEED))
+    r_train, r_test = split_indices(rows, base_idx, lambda sub: random_split(sub, 0.2, SEED))
     r_fit, r_cal = calibration_split(rows, r_train, False)
     results = [run("random rows (the usual baseline)", X, y, r_fit, r_cal, r_test)]
 
     print("  domain-disjoint...", file=sys.stderr)
-    d_train, d_test = split_base(lambda s: group_split(s, 0.2, SEED))
+    d_train, d_test = split_indices(rows, base_idx, lambda sub: group_split(sub, 0.2, SEED))
     d_fit, d_cal = calibration_split(rows, d_train, True)
     results.append(run("domain-disjoint", X, y, d_fit, d_cal, d_test))
 
@@ -247,16 +270,6 @@ def main() -> int:
     )
     results.append(imp_res)
 
-    by = {r["name"]: r for r in results}
-    base = by["random rows (the usual baseline)"]
-    dom = by["domain-disjoint"]
-    shift = by["popularity shift (head train, tail test)"]
-    cross_h = by["collection shift, host-only"]
-    cross_full = by["collection shift, as deployed (paths kept)"]
-    rules = by["impersonation rules only (no ML)"]
-    lo, hi = wilson(cross_full["tp"], cross_full["tp"] + cross_full["fn"])
-    dropped = len(army_idx) + len(head_idx) - len(c_train)
-
     print("calibrating the shipped model...", file=sys.stderr)
     ship_fit, ship_cal = calibration_split(rows, base_idx, True)
     shipped = new_model()
@@ -266,7 +279,38 @@ def main() -> int:
     )
     ship_test = at_threshold(shipped.predict_proba(X[d_test])[:, 1], y[d_test], shipped_threshold)
 
-    summary = describe(rows)
+    return Experiment(
+        rows=rows,
+        y=y,
+        summary=describe(rows),
+        results=results,
+        base_idx=base_idx,
+        army_idx=army_idx,
+        head_idx=head_idx,
+        c_train=c_train,
+        majestic_idx=majestic_idx,
+        shipped=shipped,
+        shipped_threshold=shipped_threshold,
+        ship_test=ship_test,
+        trained_on=len(ship_fit),
+        calibrated_on=len(ship_cal),
+    )
+
+
+def render(exp: Experiment) -> str:
+    """The whole report, from the measured results and nothing else."""
+    by = {r["name"]: r for r in exp.results}
+    base = by["random rows (the usual baseline)"]
+    dom = by["domain-disjoint"]
+    shift = by["popularity shift (head train, tail test)"]
+    cross_h = by["collection shift, host-only"]
+    cross_full = by["collection shift, as deployed (paths kept)"]
+    rules = by["impersonation rules only (no ML)"]
+    lo, hi = wilson(cross_full["tp"], cross_full["tp"] + cross_full["fn"])
+    dropped = len(exp.army_idx) + len(exp.head_idx) - len(exp.c_train)
+    in_base = len(exp.base_idx)
+    y = exp.y
+
     lines = [
         "# urlish benchmark report\n",
         f"Target false-positive rate: {TARGET_FPR:.0%}. Thresholds are picked on held-out\n"
@@ -274,16 +318,15 @@ def main() -> int:
         "## Dataset\n",
         "| collection | stratum | rows | positives | negatives |\n|---|---|---:|---:|---:|",
     ]
-    for (collection, stratum), s in sorted(summary.items()):
+    for (collection, stratum), s in sorted(exp.summary.items()):
         lines.append(f"| {collection} | {stratum} | {s['n']:,} | {s['pos']:,} | {s['neg']:,} |")
-    in_base = len(base_idx)
     lines += [
-        f"| **main dataset** | | **{in_base:,}** | **{int(y[base_idx].sum()):,}** | "
-        f"**{int((1 - y[base_idx]).sum()):,}** |\n",
-        f"Majestic contributes {len(majestic_idx):,} negatives and is used only by the\n"
+        f"| **main dataset** | | **{in_base:,}** | **{int(y[exp.base_idx].sum()):,}** | "
+        f"**{int((1 - y[exp.base_idx]).sum()):,}** |\n",
+        f"Majestic contributes {len(exp.majestic_idx):,} negatives and is used only by the\n"
         "collection-shift rows, so it cannot move the other numbers.\n",
         "## Results\n",
-        table(results),
+        table(exp.results),
         "\n## What the numbers say\n",
         f"The baseline reports {base['recall']:.1%} recall and {base['precision']:.1%}\n"
         f"precision at a 1% false-positive budget, AUC {base['auc']:.3f}. Even the leaky\n"
@@ -324,11 +367,11 @@ def main() -> int:
         "on cheap TLDs. Rules and classifiers cover different halves of the problem, which\n"
         "is the argument for shipping both.\n",
         "## Operating point of the shipped detector\n",
-        f"`urlish` scores at **{shipped_threshold:.4f}**. The threshold is calibrated for a\n"
+        f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The threshold is calibrated for a\n"
         "1% budget on a domain-disjoint quarter of the training rows, using the same model\n"
         "that is stored in the artifact, so the two cannot disagree. On the domain-disjoint\n"
-        f"test row that pair realises {ship_test['fpr']:.2%} false positives at\n"
-        f"{ship_test['recall']:.1%} recall; the 1% budget is spent on the calibration set,\n"
+        f"test row that pair realises {exp.ship_test['fpr']:.2%} false positives at\n"
+        f"{exp.ship_test['recall']:.1%} recall; the 1% budget is spent on the calibration set,\n"
         "and a different test distribution can spend more.\n"
         "Scoring at 0.5 instead would realise a false-positive rate an order of magnitude\n"
         "over budget, because a gradient-boosted probability is not a decision threshold.\n",
@@ -355,26 +398,37 @@ def main() -> int:
         "\n## Reproduce\n",
         "```\nuv sync\nuv run urlish-benchmark\nuv run pytest -q\n```\n",
     ]
+    return "\n".join(lines) + "\n"
 
-    report = "\n".join(lines) + "\n"
-    (ROOT / "REPORT.md").write_text(report, encoding="utf-8")
-    print("\n" + report)
 
+def write_artifact(exp: Experiment, brands: BrandIndex) -> None:
+    ARTIFACTS.mkdir(exist_ok=True)
     print("writing the shipped artifact...", file=sys.stderr)
     with open(ARTIFACTS / "model.pkl", "wb") as fh:
         pickle.dump(
             {
                 "schema": SCHEMA,
                 "feature_names": list(FEATURE_NAMES),
-                "model": shipped,
+                "model": exp.shipped,
                 "brands": brands,
-                "threshold": shipped_threshold,
-                "trained_on": len(ship_fit),
-                "calibrated_on": len(ship_cal),
+                "threshold": exp.shipped_threshold,
+                "trained_on": exp.trained_on,
+                "calibrated_on": exp.calibrated_on,
             },
             fh,
         )
     print(f"artifacts written to {ARTIFACTS}", file=sys.stderr)
+
+
+def main() -> int:
+    rows, brands = load_dataset()
+    y = np.array([r.y for r in rows], dtype=int)
+    X, Xh = featurise(rows, brands)
+    exp = run_experiments(rows, y, X, Xh, brands)
+    report = render(exp)
+    (ROOT / "REPORT.md").write_text(report, encoding="utf-8")
+    print("\n" + report)
+    write_artifact(exp, brands)
     return 0
 
 
