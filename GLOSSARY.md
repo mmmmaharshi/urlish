@@ -128,8 +128,8 @@ is not calibrated and carries no probability meaning.
 
 **Data snapshot**:
 The exact bytes of the four collection files a run read, identified by the first
-eight hex characters of each file's SHA-256. The feeds are live and `data/` is
-untracked, so a digest is the only claim a report can make about its inputs.
+eight hex characters of each file's SHA-256. The collections are live and `data/`
+is untracked, so a digest is the only claim a report can make about its inputs.
 _Avoid_: dataset version, data release
 
 **Published version**:

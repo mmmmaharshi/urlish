@@ -46,7 +46,7 @@ def score(rows, brands, idx):
 
 def test_threshold_is_calibrated_on_the_shipped_model() -> None:
     bundle = artifact.load()
-    rows, brands = load_dataset()
+    rows, brands, _ = load_dataset()
     fit, cal, test = shipped_split(rows, brands)
 
     X_cal, y_cal = score(rows, brands, cal)
@@ -69,7 +69,7 @@ def test_threshold_is_calibrated_on_the_shipped_model() -> None:
 
 
 def test_test_half_is_domain_disjoint_from_the_shipped_model() -> None:
-    rows, brands = load_dataset()
+    rows, brands, _ = load_dataset()
     fit, cal, test = shipped_split(rows, brands)
     seen = {rows[i].domain for i in fit + cal}
     assert not seen & {rows[i].domain for i in test}

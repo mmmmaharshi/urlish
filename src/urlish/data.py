@@ -263,7 +263,7 @@ def describe(rows: list[Row]) -> dict[tuple[str, str], Counts]:
 def digest(path: Path) -> str:
     """Short SHA-256 of a collection file, so the report names the snapshot it read.
 
-    The feeds are live and `data/` is untracked: two runs a week apart can differ
-    with no code change. The digest is what makes a result reproducible.
+    The collections are live and `data/` is untracked: two runs a week apart can
+    differ with no code change. The digest is what makes a result reproducible.
     """
     return hashlib.sha256(path.read_bytes()).hexdigest()[:8]

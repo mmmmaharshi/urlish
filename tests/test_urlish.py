@@ -21,6 +21,7 @@ from urlish.core import (
 )
 from urlish.data import (
     Row,
+    digest,
     group_split,
     load_majestic,
     load_tranco,
@@ -201,6 +202,18 @@ def test_loaders() -> None:
         missing = Path(tmp) / "absent.csv"
         with pytest.raises(FileNotFoundError, match="absent.csv"):
             load_tranco(missing)
+
+
+def test_digest_follows_the_bytes() -> None:
+    """The report's provenance line is only useful if a different file differs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        first = Path(tmp) / "a.txt"
+        second = Path(tmp) / "b.txt"
+        first.write_text("1.2.3.4\n", encoding="utf-8")
+        second.write_text("5.6.7.8\n", encoding="utf-8")
+        assert len(digest(first)) == 8
+        assert digest(first) != digest(second)
+        assert digest(first) == digest(Path(tmp) / "a.txt"), "same file, same digest"
 
 
 def test_splits() -> None:

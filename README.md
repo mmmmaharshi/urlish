@@ -79,9 +79,9 @@ report or the features change, never for a docs edit. Releases are git tags
 (`git tag -a v0.1.0`), not artifacts on a package index.
 
 `REPORT.md` opens with the version and the SHA-256 prefix of each collection it
-read. That line is the reproducibility claim: the feeds are live and `data/` is
-untracked, so rerunning a week later with fresh downloads changes the header even
-though the code did not change. `ARTIFACT_SCHEMA` is a separate contract - it
+read. That line is the reproducibility claim: the collections are live and `data/`
+is untracked, so rerunning a week later with fresh downloads changes the header
+even though the code did not change. `ARTIFACT_SCHEMA` is a separate contract - it
 guards the pickle against a feature change and has nothing to do with releases.
 
 ## How it works

@@ -10,9 +10,9 @@ from urlish.benchmark import README, RESULTS_END, RESULTS_START
 
 def test_report_header_names_the_version_and_the_data() -> None:
     text = (ROOT / "REPORT.md").read_text(encoding="utf-8")
-    header = next(line for line in text.splitlines() if line.startswith("urlish "))
-    assert __version__ in header, f"stale report header, rerun urlish-benchmark: {header}"
-    assert "tranco" in header, f"report does not name the data snapshot: {header}"
+    header = next((line for line in text.splitlines() if line.startswith("urlish ")), "")
+    assert __version__ in header, f"stale report header, rerun urlish-benchmark: {header!r}"
+    assert "tranco" in header, f"report does not name the data snapshot: {header!r}"
 
 
 def test_installed_version_matches_pyproject() -> None:

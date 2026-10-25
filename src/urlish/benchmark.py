@@ -40,9 +40,6 @@ SEED = 0
 HEAD_CUT = 10_000
 TAIL_CUT = 60_000
 DATA = ROOT / "data"
-DATA_FILES = tuple(
-    DATA / name for name in ("tranco.csv", "majestic.csv", "army.txt", "openphish.txt")
-)
 README = ROOT / "README.md"
 RESULTS_START = "<!-- results:start -->"
 RESULTS_END = "<!-- results:end -->"
@@ -119,14 +116,25 @@ def run(
     )
 
 
-def load_dataset() -> tuple[list[Row], BrandIndex]:
-    """Assemble the rows and the brand index exactly as the report does."""
+def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
+    """Assemble the rows and the brand index exactly as the report does.
+
+    The digest of each file is taken here, where the bytes are read, so the
+    report cannot name a collection file that this run did not load.
+    """
     print("loading collections...", file=sys.stderr)
-    tranco = load_tranco(DATA / "tranco.csv")
-    majestic = load_majestic(DATA / "majestic.csv")
+    files = {
+        "tranco": DATA / "tranco.csv",
+        "majestic": DATA / "majestic.csv",
+        "phishing_army": DATA / "army.txt",
+        "openphish": DATA / "openphish.txt",
+    }
+    snapshot = {name: digest(path) for name, path in files.items()}
+    tranco = load_tranco(files["tranco"])
+    majestic = load_majestic(files["majestic"])
     positives = {
-        "phishing_army": load_url_lines(DATA / "army.txt"),
-        "openphish": load_url_lines(DATA / "openphish.txt"),
+        "phishing_army": load_url_lines(files["phishing_army"]),
+        "openphish": load_url_lines(files["openphish"]),
     }
 
     base_rows = build_dataset(
@@ -149,8 +157,8 @@ def load_dataset() -> tuple[list[Row], BrandIndex]:
         strata=("head",),
     )
     print("building brand index...", file=sys.stderr)
-    brands = BrandIndex.from_tranco(DATA / "tranco.csv", top=2000)
-    return base_rows + majestic_rows, brands
+    brands = BrandIndex.from_tranco(files["tranco"], top=2000)
+    return base_rows + majestic_rows, brands, snapshot
 
 
 @dataclass(frozen=True)
@@ -303,7 +311,7 @@ def update_readme(results: str) -> None:
 
 
 def main() -> int:
-    rows, brands = load_dataset()
+    rows, brands, snapshot = load_dataset()
     y = np.array([r.y for r in rows], dtype=int)
     X, Xh = featurize_rows(rows, brands)
     exp = run_experiments(rows, y, X, Xh, brands)
@@ -318,7 +326,7 @@ def main() -> int:
         exp.calibrated_on,
     )
 
-    rendered = report.render(exp, {p.stem: digest(p) for p in DATA_FILES})
+    rendered = report.render(exp, snapshot)
     (ROOT / "REPORT.md").write_text(rendered, encoding="utf-8")
     update_readme(table(exp.results))
     print("\n" + rendered)
