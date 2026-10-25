@@ -15,22 +15,22 @@ Same features, same model, six ways to split the data:
 
 | split | recall@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|
-| random rows (the usual baseline) | 63.3% | 0.955 | 1.13% |
-| domain-disjoint | 62.7% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 69.0% | 0.959 | 2.29% |
-| collection shift, host-only | 28.0% | 0.810 | 0.95% |
-| collection shift, full URLs | 48.3% | 0.930 | 0.95% |
+| random rows (the usual baseline) | 63.5% | 0.955 | 1.21% |
+| domain-disjoint | 62.3% | 0.958 | 0.79% |
+| popularity shift (head train, tail test) | 69.0% | 0.959 | 2.39% |
+| collection shift, host-only | 42.0% | 0.806 | 1.01% |
+| collection shift, full URLs | 54.0% | 0.914 | 1.01% |
 | impersonation rules, no ML | 4.8% | 0.507 | 0.18% |
 
 Three things fall out of that table:
 
-1. **Splitting by domain buys almost nothing.** It costs 0.6 points of recall.
+1. **Splitting by domain buys almost nothing.** It costs 1.2 points of recall.
    Phishing hosts are mostly single-use, so there was little leakage to remove.
 2. **Popularity shift breaks the threshold before it breaks the ranking.** AUC
    holds at 0.959 while a threshold calibrated for 1% false positives realises
-   2.29% - one blocked popular domain in 44.
+   2.39% - one blocked popular domain in 42.
 3. **Changing collection is the biggest hit to ranking.** At a fixed popularity
-   band, host for host, AUC falls from 0.955 to 0.810. An earlier version of this
+   band, host for host, AUC falls from 0.955 to 0.806. An earlier version of this
    row moved the popularity band *and* the collector at once and reported 0.855;
    fixing the confound and the shared-domain leakage moves it further down.
 
@@ -53,7 +53,7 @@ uv run urlish https://paypal.com.secure-login.xyz/verify
 
 ```
 https://paypal.com.secure-login.xyz/verify
-  classifier   phishing  (p=1.000, threshold 0.887)
+  classifier   phishing  (p=0.998, threshold 0.889)
   impersonates paypal (paypal.com) - brand-token, edit distance 0
 ```
 

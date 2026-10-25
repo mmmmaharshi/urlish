@@ -124,6 +124,20 @@ def test_features() -> None:
     assert len(vecs) == 1, f"URL form changed the features: {vecs}"
 
 
+def test_lure_count_and_port() -> None:
+    """Nested lure words count once, and colons in an IPv6 host are not a port."""
+    at = {name: i for i, name in enumerate(FEATURE_NAMES)}
+
+    banking = featurize("http://example.com/banking", BRANDS)
+    assert banking[at["lure_count"]] == 1.0, "banking must not also count bank"
+
+    two = featurize("http://example.com/signin-login", BRANDS)
+    assert two[at["lure_count"]] == 2.0, "two distinct lure words must count twice"
+
+    assert featurize("http://[::1]/", BRANDS)[at["has_port"]] == 0.0
+    assert featurize("http://10.0.0.1:8080/", BRANDS)[at["has_port"]] == 1.0
+
+
 def test_threshold() -> None:
     rng = np.random.default_rng(0)
     scores = np.concatenate([rng.random(900) * 0.85, rng.random(100) * 0.1 + 0.9])

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import SplitResult
 
 from .core import (
     canonicalize,
@@ -33,6 +34,12 @@ LURE_WORDS = frozenset(
     banking bank wallet invoice support billing password recover unlock
     gift bonus claim alert suspend limited validate authentication
     """.split()
+)
+
+# Longest match wins: "banking" already contains "bank", and counting both made
+# one lure word look like two.
+LURE_CORE = frozenset(
+    word for word in LURE_WORDS if not any(word != other and word in other for other in LURE_WORDS)
 )
 
 # Cheap-registration TLDs that are over-represented in abuse feeds. This is a
@@ -136,6 +143,14 @@ def _tld(reg: str) -> str:
     return reg.rsplit(".", 1)[-1] if "." in reg else ""
 
 
+def _has_port(parts: SplitResult) -> bool:
+    """A bracketed IPv6 host has colons but no port."""
+    try:
+        return parts.port is not None
+    except ValueError:  # a non-numeric port is not a port
+        return False
+
+
 def explain(url: str, brands: BrandIndex | None) -> list[BrandMatch]:
     """Deterministic impersonation signals. No model, no training data."""
     return analyze(url, brands)[0]
@@ -218,7 +233,7 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
     path, _, query = tail.partition("?")
     full = canonical.lower()
 
-    lure_hits = sum(1 for w in LURE_WORDS if w in full)
+    lure_hits = sum(1 for w in LURE_CORE if w in full)
     longest = max((len(t) for t in host.replace(".", " ").split()), default=0)
 
     matches, dist = analyze(url, brands)
@@ -240,7 +255,7 @@ def featurize(url: str, brands: BrandIndex | None = None) -> list[float]:
         float(has_ip_host(host)),
         float("xn--" in host),
         float("@" in url),
-        float(":" in (parts.netloc or "")),
+        float(_has_port(parts)),
         float(_tld(reg) in SUSPICIOUS_TLDS),
         float(len(_tld(reg))),
         float(lure_hits),
