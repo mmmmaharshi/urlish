@@ -44,6 +44,9 @@ HEAD_CUT = 10_000
 TAIL_CUT = 60_000
 DATA = ROOT / "data"
 ARTIFACTS = ROOT / "artifacts"
+README = ROOT / "README.md"
+RESULTS_START = "<!-- results:start -->"
+RESULTS_END = "<!-- results:end -->"
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -420,6 +423,17 @@ def write_artifact(exp: Experiment, brands: BrandIndex) -> None:
     print(f"artifacts written to {ARTIFACTS}", file=sys.stderr)
 
 
+def update_readme(results: str) -> None:
+    """Generate the README table, so it cannot drift from the report."""
+    text = README.read_text(encoding="utf-8")
+    start = text.find(RESULTS_START)
+    end = text.find(RESULTS_END)
+    if start < 0 or end < start:
+        raise ValueError(f"{README}: missing {RESULTS_START} / {RESULTS_END} markers")
+    block = f"{RESULTS_START}\n{results}{RESULTS_END}"
+    README.write_text(text[:start] + block + text[end + len(RESULTS_END) :], encoding="utf-8")
+
+
 def main() -> int:
     rows, brands = load_dataset()
     y = np.array([r.y for r in rows], dtype=int)
@@ -427,6 +441,7 @@ def main() -> int:
     exp = run_experiments(rows, y, X, Xh, brands)
     report = render(exp)
     (ROOT / "REPORT.md").write_text(report, encoding="utf-8")
+    update_readme(table(exp.results))
     print("\n" + report)
     write_artifact(exp, brands)
     return 0

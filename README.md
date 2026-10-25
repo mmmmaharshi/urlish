@@ -11,34 +11,39 @@ popularity list, not verified safe.
 
 ## The point
 
-Same features, same model, six ways to split the data:
+Same features, same model, six ways to split the data. The table is generated
+by `uv run urlish-benchmark`; [REPORT.md](REPORT.md) carries the method and the
+prose.
 
-| split | recall@1%FPR | ROC-AUC | realised FPR |
-|---|---:|---:|---:|
-| random rows (the usual baseline) | 63.5% | 0.955 | 1.21% |
-| domain-disjoint | 62.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 69.0% | 0.959 | 2.39% |
-| collection shift, host-only | 42.0% | 0.806 | 1.01% |
-| collection shift, full URLs | 54.0% | 0.914 | 1.01% |
-| impersonation rules, no ML | 4.8% | 0.507 | 0.18% |
+<!-- results:start -->
+| split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| random rows (the usual baseline) | 43,380 | 14,460 | 17.0% | **63.5%** | 91.5% | 0.955 | 1.21% |
+| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.3%** | 94.3% | 0.958 | 0.79% |
+| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 58.7% | 0.959 | 2.39% |
+| collection shift, host-only | 12,756 | 10,300 | 2.9% | **42.0%** | 55.5% | 0.806 | 1.01% |
+| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **54.0%** | 61.6% | 0.914 | 1.01% |
+| impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
+<!-- results:end -->
 
 Three things fall out of that table:
 
-1. **Splitting by domain buys almost nothing.** It costs 1.2 points of recall.
-   Phishing hosts are mostly single-use, so there was little leakage to remove.
+1. **Splitting by domain buys almost nothing.** The domain-disjoint row loses
+   little recall and keeps its AUC. Phishing hosts are mostly single-use, so
+   there was little leakage to remove.
 2. **Popularity shift breaks the threshold before it breaks the ranking.** AUC
-   holds at 0.959 while a threshold calibrated for 1% false positives realises
-   2.39% - one blocked popular domain in 42.
+   barely moves while the threshold calibrated for the 1% budget realises more
+   than twice that on the long tail - one blocked popular domain in a few dozen.
 3. **Changing collection is the biggest hit to ranking.** At a fixed popularity
-   band, host for host, AUC falls from 0.955 to 0.806. An earlier version of this
-   row moved the popularity band *and* the collector at once and reported 0.855;
-   fixing the confound and the shared-domain leakage moves it further down.
+   band, host for host, AUC falls further here than in any other row. An earlier
+   version of this row moved the popularity band *and* the collector at once;
+   fixing the confound and the shared-domain leakage moved it further down.
 
-The deterministic brand rules need no training data and reach 85.1% precision at
-0.18% FPR, but only 4.8% recall. Most phishing hosts are throwaway domains on
-cheap TLDs, not typosquats. The two approaches cover different halves of the
-problem: at the 1% operating point the classifier misses `paypa1.com`, and the
-rules catch it.
+The deterministic brand rules need no training data and are precise at a low
+false-positive rate, but their recall is in the single digits. Most phishing
+hosts are throwaway domains on cheap TLDs, not typosquats. The two approaches
+cover different halves of the problem: at the operating point the classifier
+misses `paypa1.com`, and the rules catch it.
 
 Full numbers and method: [REPORT.md](REPORT.md).
 
@@ -46,19 +51,15 @@ Full numbers and method: [REPORT.md](REPORT.md).
 
 ```bash
 uv sync                                 # creates .venv from uv.lock
-uv run urlish-benchmark                 # ~50 s, writes REPORT.md and artifacts/
+uv run urlish-benchmark                 # ~50 s, writes REPORT.md, README table, artifacts/
 uv run pytest -q                        # offline checks + the artifact operating point
 uv run urlish https://paypal.com.secure-login.xyz/verify
 ```
 
-```
-https://paypal.com.secure-login.xyz/verify
-  classifier   phishing  (p=0.998, threshold 0.889)
-  impersonates paypal (paypal.com) - brand-token, edit distance 0
-```
-
-The threshold is calibrated for a 1% budget and stored in the model artifact. It
-is deliberately not 0.5; scoring at 0.5 would realise roughly 11% false positives.
+The threshold is calibrated for the 1% budget and stored in the model artifact. It
+is deliberately not 0.5: a gradient-boosted probability is not a decision
+threshold, and scoring at 0.5 spends many times the budget. The exact operating
+point is in [REPORT.md](REPORT.md).
 
 Dependencies are pinned in `pyproject.toml` and locked in `uv.lock`. Keep the pins:
 the report's numbers are deterministic, and a different scikit-learn build can move
@@ -94,13 +95,14 @@ phishing" ([ADR 1](docs/adr/0001-synthesise-www-prefixes.md)).
 - **Every row reports recall at a fixed false-positive rate**, because accuracy
   and even precision are meaningless under class imbalance. Precision is
   reported alongside the test set's positive rate so it can be read honestly.
-- **`pos rate` is a column, not a footnote.** Precision varies 46.9% to 94.3%
-  across rows largely because prevalence varies 2.9% to 17.2%.
+- **`pos rate` is a column, not a footnote.** Precision varies widely across rows
+  because prevalence does; read each precision against its own row's positive
+  rate.
 - **The split is the experiment.** `data.py` exposes `random_split`,
   `group_split`, and `select` so the comparison is reproducible, not prose.
 - **Shared domains are removed across a collection boundary.** Majestic and
-  Tranco overlap heavily; 4,992 rows were dropped from the training half of the
-  collection-shift test for exactly that reason ([ADR 2](docs/adr/0002-drop-shared-domains-from-train.md)).
+  Tranco overlap heavily, so rows whose registrable domain appears on both sides
+  are dropped from the training half; the report gives the count ([ADR 2](docs/adr/0002-drop-shared-domains-from-train.md)).
 
 ## Data
 
@@ -151,5 +153,5 @@ The two experiments this harness is built for but does not contain:
 1. **Temporal split.** Needs dated collections (PhishTank with a key, URLhaus, or
    Certificate Transparency logs). This is the version a reviewer will ask for.
 2. **Threshold drift under a live feed.** Recalibrate weekly and plot realised
-   FPR over months. The 2.29% row suggests this is the real operational risk,
-   and nobody publishes it.
+   FPR over months. The popularity-shift row suggests this is the real
+   operational risk, and nobody publishes it.
