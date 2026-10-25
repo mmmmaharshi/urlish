@@ -352,7 +352,7 @@ def main() -> int:
         "- Brands come from Tranco, which over-represents Western sites. Impersonation of\n"
         "  regional brands is under-covered.\n",
         "\n## Reproduce\n",
-        "```\nuv sync\nuv run urlish-benchmark\nuv run python tests/test_selfcheck.py\n```\n",
+        "```\nuv sync\nuv run urlish-benchmark\nuv run pytest -q\n```\n",
     ]
 
     report = "\n".join(lines) + "\n"

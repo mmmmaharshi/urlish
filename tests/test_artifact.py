@@ -8,11 +8,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from urlish.benchmark import TARGET_FPR, calibration_split, load_dataset
-from urlish.cli import load
+from urlish.benchmark import DATA, TARGET_FPR, calibration_split, load_dataset
+from urlish.cli import ARTIFACTS, load
 from urlish.data import select
 from urlish.features import featurize
 from urlish.metrics import at_threshold, threshold_at_fpr
+
+pytestmark = pytest.mark.skipif(
+    not (DATA / "tranco.csv").exists() or not ARTIFACTS.exists(),
+    reason="needs data/ and artifacts/model.pkl; run `uv run urlish-benchmark` first",
+)
 
 
 def test_threshold_is_calibrated_on_the_shipped_model() -> None:
