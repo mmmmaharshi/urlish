@@ -1,5 +1,10 @@
 # AGENTS.md
 
+## Must follow: reply style
+
+Every reply uses the `$caveman $simple-english $i-have-adhd` skills together.
+Load all three, then apply them to the answer text.
+
 ## Must follow: coding standards
 
 `CODING_STANDARDS.md` is binding. Read it before writing code and follow every
