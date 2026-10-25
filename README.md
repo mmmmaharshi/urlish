@@ -57,6 +57,8 @@ Three published detectors show the common protocols:
 
 All three hold out data by time. None reports the popularity mix of the negatives, and none removes shared registrable domains. The rows in this repo change those two axes one at a time.
 
+A 2026 review reaches the same conclusion: the field lacks a shared benchmark with fixed temporal and domain-disjoint splits and standard false-positive reporting ([Applied Sciences](https://www.mdpi.com/2076-3417/16/19/9576)).
+
 ## Quick start
 
 ```bash
