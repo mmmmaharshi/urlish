@@ -138,6 +138,41 @@ def check_provenance() -> None:
     assert remove_domains([2, 3, 4], rows, {"c.com"}) == [3, 4]
 
 
+def check_loaders() -> None:
+    """A bad collection must stop the run, not produce a plausible-looking report."""
+    import contextlib
+    import io
+    import tempfile
+
+    from urlish.data import load_majestic, load_tranco, load_url_lines
+
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp) / "empty.csv"
+        empty.write_text("", encoding="utf-8")
+        for loader in (load_tranco, load_majestic, load_url_lines):
+            try:
+                loader(empty)
+            except ValueError as exc:
+                assert str(empty) in str(exc), exc
+            else:
+                raise AssertionError(f"{loader.__name__} accepted an empty file")
+
+        header_only = Path(tmp) / "header.csv"
+        header_only.write_text("GlobalRank,Tld,Domain\n", encoding="utf-8")
+        try:
+            load_majestic(header_only)
+        except ValueError as exc:
+            assert "GlobalRank,Domain" in str(exc), exc
+        else:
+            raise AssertionError("majestic accepted a header with no rows")
+
+        good = Path(tmp) / "tranco.csv"
+        good.write_text("1,example.com\nnope,example.org\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            assert load_tranco(good) == [(1, "example.com")]
+        assert "skipped 1" in err.getvalue(), err.getvalue()
+
+
 def check_splits() -> None:
     rows = [
         Row(f"http://{d}/", int(i % 2), d, "synthetic", None)
@@ -161,6 +196,7 @@ def main() -> int:
         check_features,
         check_threshold,
         check_provenance,
+        check_loaders,
         check_splits,
     ]
     for check in checks:

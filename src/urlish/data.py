@@ -14,6 +14,7 @@ builds the collection and stratum contrasts.
 from __future__ import annotations
 
 import random
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,32 +45,54 @@ def _dedupe(rows: list[Row]) -> list[Row]:
     return out
 
 
+def _parsed[T](
+    rows: list[T], path: str | Path, expected: str, skipped: int = 0
+) -> list[T]:
+    """Reject an empty collection instead of letting it skew every later number."""
+    if not rows:
+        raise ValueError(f"{path}: no rows parsed; expected {expected}")
+    if skipped:
+        print(f"{path}: skipped {skipped} malformed line(s)", file=sys.stderr)
+    return rows
+
+
 def load_tranco(path: str | Path) -> list[tuple[int, str]]:
     """Tranco CSV is `rank,domain` with no header."""
     rows = []
+    skipped = 0
     with open(path, encoding="utf-8-sig") as fh:
         for line in fh:
+            if not line.strip():
+                continue
             parts = line.strip().split(",")
             if len(parts) >= 2 and parts[0].isdigit():
                 rows.append((int(parts[0]), parts[1].strip().lower()))
-    return rows
+            else:
+                skipped += 1
+    return _parsed(rows, path, "rank,domain", skipped)
 
 
 def load_majestic(path: str | Path) -> list[tuple[int, str]]:
     """Majestic Million CSV: GlobalRank in column 0, Domain in column 2."""
     rows = []
+    skipped = 0
     with open(path, encoding="utf-8-sig") as fh:
         next(fh, None)  # header
         for line in fh:
+            if not line.strip():
+                continue
             parts = line.strip().split(",")
             if len(parts) >= 3 and parts[0].isdigit():
                 rows.append((int(parts[0]), parts[2].strip().lower()))
-    return rows
+            else:
+                skipped += 1
+    return _parsed(rows, path, "GlobalRank,Domain CSV with a header", skipped)
 
 
 def load_url_lines(path: str | Path) -> list[str]:
     """One URL per line, comments and blanks skipped."""
     out = []
+    skipped = 0
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -80,7 +103,9 @@ def load_url_lines(path: str | Path) -> list[str]:
                 out.append(line)
             elif "." in low and " " not in low:
                 out.append("http://" + line)
-    return out
+            else:
+                skipped += 1
+    return _parsed(out, path, "one URL per line", skipped)
 
 
 def negative_rows(
