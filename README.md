@@ -61,6 +61,8 @@ All three hold out data by time. None reports the popularity mix of the negative
 
 A 2026 review reaches the same conclusion: the field lacks a shared benchmark with fixed temporal and domain-disjoint splits and standard false-positive reporting ([Applied Sciences](https://www.mdpi.com/2076-3417/16/19/9576)).
 
+A reimplementation of URLNet's character CNN on this corpus (20,000 rows, temporal split) reaches 73.9% recall at 0.9% realised FPR and AUC 0.977. It is a stronger detector than the tree model on the same split, which is the honest baseline the comparison needs.
+
 ## Quick start
 
 ```bash
