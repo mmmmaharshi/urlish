@@ -1,7 +1,7 @@
 """Dataset assembly and the split strategies that decide the paper's numbers.
 
 Two independent axes decide where a row came from: the collection it belongs to
-(`phishing_army`, `openphish`, `tranco`, `majestic`) and, for negatives, the
+(`phreshphish`, `openphish`, `tranco`, `majestic`) and, for negatives, the
 popularity stratum (`head`, `tail`). Keeping them separate is the point: a split
 that varies one axis while holding the other is the only way to attribute a drop
 to either.
@@ -13,9 +13,12 @@ builds the collection and stratum contrasts.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import html as _html
 import random
 import sys
+from datetime import date as _date
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,9 +42,11 @@ class Row:
     domain: str  # registrable domain
     collection: str  # upstream list the row came from
     stratum: str | None  # "head"/"tail" for negatives, None for positives
+    date: str | None = None  # collection date, when the source provides one
+    target: str | None = None  # impersonated brand, for positive rows
 
 
-def _dedupe(rows: list[Row]) -> list[Row]:
+def dedupe(rows: list[Row]) -> list[Row]:
     seen: set[tuple[str, int]] = set()
     out = []
     for row in rows:
@@ -114,6 +119,51 @@ def load_url_lines(path: str | Path) -> list[str]:
     return _require_rows(out, path, "one URL per line", skipped)
 
 
+def load_phreshphish(path: str | Path) -> list[Row]:
+    """PhreshPhish derived CSV: url,date,label,target. Only the first two
+    columns become a Row; target is a brand label, not a feature input."""
+    path = Path(path)
+    rows: list[Row] = []
+    skipped = 0
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.reader(fh)
+        header = next(reader, None)
+        if header != ["url", "date", "label", "target"]:
+            raise ValueError(f"{path}: bad header {header!r}, expected url,date,label,target")
+        for record in reader:
+            if not record:
+                continue
+            if len(record) != 4:
+                skipped += 1
+                continue
+            url, raw_date, label, raw_target = (c.strip() for c in record)
+            if label == "phish":
+                y = 1
+            elif label == "benign":
+                y = 0
+            else:
+                skipped += 1
+                continue
+            try:
+                _date.fromisoformat(raw_date)
+            except ValueError:
+                skipped += 1
+                continue
+            low = url.lower()
+            if "://" not in low:
+                url = "http://" + url
+            if "." not in low or " " in low:
+                skipped += 1
+                continue
+            target = _html.unescape(raw_target) if raw_target and raw_target != "other" else None
+            rows.append(
+                Row(url, y, registrable_domain(host_of(url)), "phreshphish", None, raw_date, target)
+            )
+    if skipped:
+        print(f"{path}: skipped {skipped} malformed line(s)", file=sys.stderr)
+    return _require_rows(rows, path, "url,date,label,target rows", skipped)
+
+
 def negative_rows(
     ranked: list[tuple[int, str]],
     collection: str,
@@ -150,37 +200,6 @@ def negative_rows(
                 )
             )
     return rows
-
-
-def build_dataset(
-    positives: dict[str, list[str]],
-    negatives: dict[str, list[tuple[int, str]]],
-    *,
-    head_cut: int = 10_000,
-    tail_cut: int = 60_000,
-    pos_cap: int = 12_000,
-    neg_cap: int = 60_000,
-) -> list[Row]:
-    """Positives from named phishing collections, negatives from ranked lists."""
-    rows: list[Row] = []
-
-    for collection, urls in positives.items():
-        step = max(1, len(urls) // pos_cap)
-        for url in urls[::step][:pos_cap]:
-            rows.append(Row(url, 1, registrable_domain(host_of(url)), collection, None))
-
-    for collection, ranked in negatives.items():
-        rows.extend(
-            negative_rows(
-                ranked,
-                collection,
-                head_cut=head_cut,
-                tail_cut=tail_cut,
-                cap=neg_cap,
-            )
-        )
-
-    return _dedupe(rows)
 
 
 def select(
@@ -249,6 +268,27 @@ def group_split(rows: list[Row], frac: float, seed: int = 0) -> tuple[list[int],
     test_set = set(test)
     train = [i for i in range(len(rows)) if i not in test_set]
     return train, sorted(test)
+
+
+def time_split(rows: list[Row], cutoff: str) -> tuple[list[int], list[int]]:
+    """Train on rows dated before `cutoff`, test on rows on or after it.
+
+    Shared registrable domains are removed from the training half, the same
+    asymmetry as ADR 0002: the test half holds the positives, so dropping there
+    would discard the measurement.
+    """
+    undated = sum(1 for r in rows if r.date is None)
+    if undated:
+        print(f"time_split: skipped {undated} undated row(s)", file=sys.stderr)
+    train = [i for i, r in enumerate(rows) if r.date is not None and r.date < cutoff]
+    test = [i for i, r in enumerate(rows) if r.date is not None and r.date >= cutoff]
+    if not train or not test:
+        raise ValueError("time_split: one side is empty")
+    shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
+    train = [i for i in train if rows[i].domain not in shared]
+    if not train:
+        raise ValueError("time_split: training half empty after domain removal")
+    return sorted(train), sorted(test)
 
 
 def describe(rows: list[Row]) -> dict[tuple[str, str], Counts]:

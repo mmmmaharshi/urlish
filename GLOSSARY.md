@@ -23,8 +23,13 @@ not with ground truth, and every claim inherits that limit.
 ## Sources
 
 **Collection**:
-One upstream list a row came from: Phishing Army, OpenPhish, or Tranco.
+One upstream list a row came from: Phishing Army, OpenPhish, Tranco, or
+PhreshPhish.
 _Avoid_: source, dataset, feed
+
+**Collection date**:
+The date a collection assigns to a row. It is the upstream's label, not a date
+this repository measured, and every claim about time inherits that limit.
 
 **Collector**:
 The operator of a phishing collection. Tranco is not a collector, so the word
@@ -66,6 +71,11 @@ Train and test drawn from disjoint collections, with the popularity stratum held
 fixed. Every row carries both facts; a split that varies both measures nothing
 in particular.
 _Avoid_: source split, cross-collector (when the stratum also moves)
+
+**Temporal split**:
+Train on rows dated before a cutoff, test on rows dated on or after it, with no
+registrable domain shared across the boundary. The cutoff is a date, not a row
+count, so the split is reproducible from the bytes.
 **Fit set / calibration set / test set**:
 Three disjoint parts of every experiment. The model is trained on the fit set,
 the threshold is chosen on the calibration set, and nothing from the test set

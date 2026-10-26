@@ -18,19 +18,20 @@ prose.
 <!-- results:start -->
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
-| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
-| collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
-| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **48.3%** | 60.4% | 0.930 | 0.95% |
-| impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
+| random rows | 43,200 | 14,400 | 16.7% | **78.1%** | 94.2% | 0.981 | 0.96% |
+| domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
+| temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
+| popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
+| cross-dataset, host-only | 30,034 | 10,300 | 2.9% | **46.0%** | 60.8% | 0.836 | 0.89% |
+| cross-dataset, as deployed (paths kept) | 30,034 | 10,300 | 2.9% | **66.0%** | 38.2% | 0.814 | 3.21% |
+| impersonation rules only (no ML) | 0 | 14,462 | 12.4% | **0.0%** | 0.0% | 0.555 | 0.00% |
 <!-- results:end -->
 
 Three things fall out of that table:
 
-1. **Splitting by domain buys almost nothing.** The domain-disjoint row loses
-   little recall and keeps its AUC. Phishing hosts are mostly single-use, so
-   there was little leakage to remove.
+1. **Splitting by domain still buys little.** The domain-disjoint row loses a
+   few points of recall and keeps its AUC. Phishing hosts are mostly single-use,
+   so there was little leakage to remove.
 2. **Popularity shift breaks the threshold before it breaks the ranking.** AUC
    barely moves while the threshold calibrated for the 1% budget realises more
    than twice that on the long tail - one blocked popular domain in a few dozen.
@@ -140,12 +141,15 @@ phishing" ([ADR 1](docs/adr/0001-synthesise-www-prefixes.md)).
 
 | collection | what |
 |---|---|
-| Tranco top 100k | negatives, two popularity bands |
-| Majestic Million | negatives, head band only |
-| Phishing Army | positives, host-only |
-| OpenPhish | positives, full paths |
+| PhreshPhish | dated corpus: positives and negatives (July 2024 to December 2025) |
+| Tranco top 100k | popularity ranks and brand list |
+| Majestic Million | negatives, cross-dataset test half |
+| OpenPhish | positives, cross-dataset test half |
 
 Exact row counts per collection are in [REPORT.md](REPORT.md).
+
+PhreshPhish is released under CC BY 4.0 by Dalton et al. (arXiv:2507.10854);
+cite it if you use these numbers.
 
 `data/majestic.csv` is trimmed to the top 60k of the 1M-row download; the full
 file is 80 MB and only the head band is used. Tranco is dated - cite the list ID
@@ -159,13 +163,15 @@ curl -sO https://tranco-list.eu/download/<list_id>/100000     # -> data/tranco.c
 curl -s https://downloads.majestic.com/majestic_million.csv   # keep 60k rows
 curl -sO https://phishing.army/download/phishing_army_blocklist_extended.txt
 curl -sO https://openphish.com/feed.txt
+uv run scripts/fetch_phreshphish.py    # ~25 MB, four columns only
 ```
 
 ## Known limits
 
-- **No temporal split.** These collections carry no dates. A temporal holdout is
-  the missing experiment and is harder than anything above, because negatives
-  always look "current".
+- **One collection, one date range.** The temporal row uses one collection's
+  dates (July 2024 to December 2025). The leakage filter in that collection's
+  paper runs on page content, which this benchmark does not read, so the row is
+  a URL-level approximation.
 - **Labels are collection membership**, not ground truth. Collections include
   dead, parked and occasionally mislabelled hosts, and popularity is not safety.
 - **The collection-shift test is narrower than the rest**: its positive count is
@@ -182,10 +188,8 @@ curl -sO https://openphish.com/feed.txt
 
 ## If you want to take this further
 
-The two experiments this harness is built for but does not contain:
+The experiment this harness is built for but does not contain:
 
-1. **Temporal split.** Needs dated collections (PhishTank with a key, URLhaus, or
-   Certificate Transparency logs). This is the version a reviewer will ask for.
-2. **Threshold drift under a live feed.** Recalibrate weekly and plot realised
+1. **Threshold drift under a live feed.** Recalibrate weekly and plot realised
    FPR over months. The popularity-shift row suggests this is the real
    operational risk, and nobody publishes it.

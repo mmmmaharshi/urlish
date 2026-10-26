@@ -14,21 +14,23 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
 from . import ROOT, artifact, report
-from .core import host_of
+from .core import host_of, registrable_domain
 from .data import (
     Counts,
     Row,
-    build_dataset,
+    dedupe,
     describe,
     digest,
     group_split,
     load_majestic,
+    load_phreshphish,
     load_tranco,
     load_url_lines,
     negative_rows,
     random_split,
     remove_domains,
     select,
+    time_split,
 )
 from .features import BrandIndex, analyze, featurize
 from .metrics import TARGET_FPR, at_threshold, threshold_at_fpr
@@ -116,6 +118,17 @@ def run(
     )
 
 
+def _stratum_for(domain: str, tranco_rank: dict[str, int]) -> str | None:
+    rank = tranco_rank.get(domain.lower())
+    if rank is None:
+        return None
+    if rank <= HEAD_CUT:
+        return "head"
+    if rank <= TAIL_CUT:
+        return "tail"
+    return None
+
+
 def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
     """Assemble the rows and the brand index exactly as the report does.
 
@@ -124,30 +137,54 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
     """
     print("loading collections...", file=sys.stderr)
     files = {
+        "phreshphish": DATA / "phreshphish.csv",
         "tranco": DATA / "tranco.csv",
         "majestic": DATA / "majestic.csv",
-        "phishing_army": DATA / "army.txt",
         "openphish": DATA / "openphish.txt",
     }
     snapshot = {name: digest(path) for name, path in files.items()}
     tranco = load_tranco(files["tranco"])
+    tranco_rank = {domain.lower(): rank for rank, domain in tranco}
     majestic = load_majestic(files["majestic"])
-    positives = {
-        "phishing_army": load_url_lines(files["phishing_army"]),
-        "openphish": load_url_lines(files["openphish"]),
-    }
+    openphish_urls = load_url_lines(files["openphish"])
 
-    base_rows = build_dataset(
-        positives,
-        {"tranco": tranco},
-        head_cut=HEAD_CUT,
-        tail_cut=TAIL_CUT,
-        pos_cap=12_000,
-        neg_cap=60_000,
+    raw = load_phreshphish(files["phreshphish"])
+    pos_all = [r for r in raw if r.y == 1]
+    neg_all = [r for r in raw if r.y == 0]
+    pos_step = max(1, len(pos_all) // 12_000)
+    neg_step = max(1, len(neg_all) // 60_000)
+    sampled_pos = pos_all[::pos_step][:12_000]
+    sampled_neg = neg_all[::neg_step][:60_000]
+
+    sampled_neg = [
+        Row(
+            r.url,
+            r.y,
+            r.domain,
+            r.collection,
+            _stratum_for(r.domain, tranco_rank),
+            r.date,
+            r.target,
+        )
+        for r in sampled_neg
+    ]
+    ranked = sum(1 for r in sampled_neg if r.stratum is not None)
+    print(
+        f"phreshphish: {len(sampled_pos):,} positives, {len(sampled_neg):,} negatives "
+        f"({ranked:,} ranked in Tranco)",
+        file=sys.stderr,
     )
-    # Majestic is only used as a second collection of negatives for the
-    # collection-shift test, so it never enters the main dataset and cannot move
-    # the other rows.
+    base_rows = dedupe(sampled_pos + sampled_neg)
+    # shortcut: stride sampling over file order keeps every month roughly represented
+    # but is not stratified by date; replace with per-month sampling if the
+    # temporal row looks lopsided.
+
+    openphish_step = max(1, len(openphish_urls) // 12_000)
+    openphish_rows = [
+        Row(url, 1, registrable_domain(host_of(url)), "openphish", None)
+        for url in openphish_urls[::openphish_step][:12_000]
+    ]
+
     majestic_rows = negative_rows(
         majestic,
         "majestic",
@@ -157,8 +194,43 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
         strata=("head",),
     )
     print("building brand index...", file=sys.stderr)
-    brands = BrandIndex.from_tranco(files["tranco"], top=2000)
-    return base_rows + majestic_rows, brands, snapshot
+    from .core import fold as _fold
+
+    entries: list[tuple[str, str]] = []
+    # Tranco top-2000 brands (Western, as before).
+    with open(files["tranco"], encoding="utf-8") as fh:
+        for line in fh:
+            parts = line.strip().split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                rank = int(parts[0])
+            except ValueError:
+                continue
+            if rank > 2000:
+                break
+            reg = registrable_domain(parts[1])
+            label = reg.split(".")[0] if reg else ""
+            if label:
+                entries.append((label, reg))
+    # PhreshPhish's own target brands, so the rules fire on this corpus too.
+    tranco_primary = {
+        _fold(registrable_domain(domain).split(".")[0]): registrable_domain(domain)
+        for _, domain in tranco
+    }
+    seen_targets: set[str] = set()
+    for r in raw:
+        if r.y != 1 or not r.target:
+            continue
+        folded = _fold(r.target)
+        if folded in seen_targets:
+            continue
+        seen_targets.add(folded)
+        primary = tranco_primary.get(folded, f"{folded}.com" if folded else "")
+        if r.target and primary:
+            entries.append((r.target, primary))
+    brands = BrandIndex(entries, max_dist=2)
+    return base_rows + openphish_rows + majestic_rows, brands, snapshot
 
 
 @dataclass(frozen=True)
@@ -168,7 +240,11 @@ class Experiment:
     summary: dict[tuple[str, str], Counts]
     base: Result
     domain: Result
+    temporal: Result
     popularity: Result
+    cutoff: str
+    date_range: tuple[str, str]
+    ranked_neg: int
     collection_host: Result
     collection_full: Result
     rules: Result
@@ -188,6 +264,7 @@ class Experiment:
         return [
             self.base,
             self.domain,
+            self.temporal,
             self.popularity,
             self.collection_host,
             self.collection_full,
@@ -211,55 +288,54 @@ def featurize_rows(rows: list[Row], brands: BrandIndex) -> tuple[np.ndarray, np.
 def run_experiments(
     rows: list[Row], y: np.ndarray, X: np.ndarray, Xh: np.ndarray, brands: BrandIndex
 ) -> Experiment:
-    base_idx = select(rows, collections={"phishing_army", "openphish", "tranco"})
-    pos_idx = select(rows, label=1)
-    head_idx = select(rows, collections={"tranco"}, stratum="head", label=0)
-    tail_idx = select(rows, collections={"tranco"}, stratum="tail", label=0)
-    army_idx = select(rows, collections={"phishing_army"})
+    base_idx = select(rows, collections={"phreshphish"})
+    pos_idx = select(rows, label=1, collections={"phreshphish"})
+    head_idx = select(rows, collections={"phreshphish"}, stratum="head", label=0)
+    tail_idx = select(rows, collections={"phreshphish"}, stratum="tail", label=0)
     openphish_idx = select(rows, collections={"openphish"})
     majestic_idx = select(rows, collections={"majestic"}, stratum="head", label=0)
+
+    phish_dates = sorted(r.date for r in rows if r.collection == "phreshphish" and r.date)
+    # 80th percentile row's month, as a date: the cutoff is the first day of that month.
+    idx = int(0.8 * len(phish_dates))
+    cutoff = phish_dates[idx][:7] + "-01"
+    date_range = (phish_dates[0], phish_dates[-1])
+    print(f"  temporal cutoff: {cutoff}", file=sys.stderr)
 
     def evaluated(
         name: str, features: np.ndarray, train: list[int], test: list[int], grouped: bool = True
     ) -> Result:
-        """Calibrate on part of the training half, then score the test half."""
         fit, cal = calibration_split(rows, train, grouped)
         return run(name, features, y, fit, cal, test)
 
     def negative_shift() -> tuple[list[int], list[int]]:
-        """Train against popular domains, test against the long tail."""
         train_p, test_p = split_indices(rows, pos_idx, lambda sub: group_split(sub, 0.2, SEED))
         return train_p + head_idx, test_p + tail_idx
 
-    def collection_shift() -> tuple[list[int], list[int]]:
-        """Vary the collection, hold the popularity stratum fixed.
-
-        Positives move from one phishing collector to another, negatives from one
-        popularity list to another, both in the head band. Domains present on
-        both sides are dropped from the training half only: the test half holds
-        the scarce positives, so discarding there would throw away the
-        measurement.
-        """
-        train = army_idx + head_idx
+    def cross_dataset() -> tuple[list[int], list[int]]:
+        train = base_idx
         test = openphish_idx + majestic_idx
         shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
         return remove_domains(train, rows, shared), test
 
     r_train, r_test = split_indices(rows, base_idx, lambda sub: random_split(sub, 0.2, SEED))
     d_train, d_test = split_indices(rows, base_idx, lambda sub: group_split(sub, 0.2, SEED))
+    t_train, t_test = split_indices(rows, base_idx, lambda sub: time_split(sub, cutoff))
     s_train, s_test = negative_shift()
-    c_train, c_test = collection_shift()
+    x_train, x_test = cross_dataset()
 
     print("  random rows...", file=sys.stderr)
     base = evaluated("random rows", X, r_train, r_test, grouped=False)
     print("  domain-disjoint...", file=sys.stderr)
     domain = evaluated("domain-disjoint", X, d_train, d_test)
+    print("  temporal split...", file=sys.stderr)
+    temporal = evaluated("temporal split", X, t_train, t_test)
     print("  popularity shift (head train, tail test)...", file=sys.stderr)
     popularity = evaluated("popularity shift (head train, tail test)", X, s_train, s_test)
-    print("  collection shift, host-only...", file=sys.stderr)
-    collection_host = evaluated("collection shift, host-only", Xh, c_train, c_test)
-    print("  collection shift, as deployed (paths kept)...", file=sys.stderr)
-    collection_full = evaluated("collection shift, as deployed (paths kept)", X, c_train, c_test)
+    print("  cross-dataset, host-only...", file=sys.stderr)
+    collection_host = evaluated("cross-dataset, host-only", Xh, x_train, x_test)
+    print("  cross-dataset, as deployed (paths kept)...", file=sys.stderr)
+    collection_full = evaluated("cross-dataset, as deployed (paths kept)", X, x_train, x_test)
 
     print("  impersonation rules...", file=sys.stderr)
     imp = np.asarray([impersonation_score(r.url, brands) for r in rows], dtype=float)
@@ -273,25 +349,29 @@ def run_experiments(
     )
 
     print("fitting the shipped model...", file=sys.stderr)
-    # Same fit/calibration pair as the domain-disjoint row, so the artifact's
-    # operating point is that row: measured on test rows the pair never saw.
     d_fit, d_cal = calibration_split(rows, d_train, True)
     shipped, shipped_threshold = fit_pair(X, y, d_fit, d_cal)
 
     base_pos = int(y[base_idx].sum())
+    cross_dropped = len(base_idx) - len(x_train)
+    ranked_neg = sum(1 for i in base_idx if rows[i].y == 0 and rows[i].stratum is not None)
     return Experiment(
         summary=describe(rows),
         base=base,
         domain=domain,
+        temporal=temporal,
         popularity=popularity,
         collection_host=collection_host,
         collection_full=collection_full,
         rules=rules,
-        dropped=len(army_idx) + len(head_idx) - len(c_train),
+        dropped=cross_dropped,
         n_base=len(base_idx),
         n_pos=base_pos,
         n_neg=len(base_idx) - base_pos,
         majestic=len(majestic_idx),
+        cutoff=cutoff,
+        date_range=date_range,
+        ranked_neg=ranked_neg,
         shipped=shipped,
         shipped_threshold=shipped_threshold,
         trained_on=len(d_fit),

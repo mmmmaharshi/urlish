@@ -28,3 +28,9 @@ The five canonical triage roles, with default label strings. See `docs/agents/tr
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+`docs/README.md` indexes the rest of `docs/`.
+
+### Research
+
+Network research runs inline with bounded timeouts. Background subagents can hang
+on slow fetches with no progress signal.

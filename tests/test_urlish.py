@@ -24,11 +24,13 @@ from urlish.data import (
     digest,
     group_split,
     load_majestic,
+    load_phreshphish,
     load_tranco,
     load_url_lines,
     random_split,
     remove_domains,
     select,
+    time_split,
 )
 from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize
 from urlish.metrics import at_threshold, threshold_at_fpr
@@ -229,3 +231,68 @@ def test_splits() -> None:
     train_r, test_r = random_split(rows, 0.2, 0)
     assert len(train_r) + len(test_r) == len(rows)
     assert set(train_r).isdisjoint(test_r)
+
+
+def test_phreshphish_loader() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp) / "empty.csv"
+        empty.write_text("", encoding="utf-8")
+        with pytest.raises(ValueError, match=re.escape(str(empty))):
+            load_phreshphish(empty)
+
+        bad_header = Path(tmp) / "bad.csv"
+        bad_header.write_text("url,date,label\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="url,date,label,target"):
+            load_phreshphish(bad_header)
+
+        good = Path(tmp) / "good.csv"
+        good.write_text(
+            "url,date,label,target\n"
+            "https://a.example/login,2024-07-01,phish,paypal\n"
+            "https://b.example/,2025-01-01,benign,\n"
+            "https://c.example/,not-a-date,phish,other\n"
+            "https://d.example/,2024-08-01,unknown,other\n",
+            encoding="utf-8",
+        )
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            rows = load_phreshphish(good)
+        assert len(rows) == 2
+        assert rows[0].y == 1 and rows[0].date == "2024-07-01"
+        assert rows[1].y == 0 and rows[1].date == "2025-01-01"
+        assert "skipped 2" in err.getvalue(), err.getvalue()
+
+        missing = Path(tmp) / "absent.csv"
+        with pytest.raises(FileNotFoundError, match="absent.csv"):
+            load_phreshphish(missing)
+
+
+def test_time_split() -> None:
+    # site0.com appears on both sides of the cutoff, so the shared-domain
+    # removal has something to drop from the training half.
+    rows = [
+        Row("http://site0.com/", 0, "site0.com", "phreshphish", None, "2024-07-01"),
+        Row("http://site0.com/", 1, "site0.com", "phreshphish", None, "2025-01-01"),
+    ] + [
+        Row(
+            f"http://{d}/",
+            int(i % 2),
+            d,
+            "phreshphish",
+            None,
+            "2024-07-01" if i < 3 else "2025-01-01",
+        )
+        for i, d in enumerate(f"site{n}.com" for n in range(1, 7))
+    ]
+    train, test = time_split(rows, "2025-01-01")
+    assert all(rows[i].date < "2025-01-01" for i in train)
+    assert all(rows[i].date >= "2025-01-01" for i in test)
+    shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
+    assert not shared, shared
+    assert "site0.com" not in {rows[i].domain for i in train}
+    assert "site0.com" in {rows[i].domain for i in test}
+
+    # A cutoff that empties one side must raise.
+    with pytest.raises(ValueError):
+        time_split(rows, "2023-01-01")
+    with pytest.raises(ValueError):
+        time_split(rows, "2026-01-01")
