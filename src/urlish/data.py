@@ -13,9 +13,11 @@ builds the collection and stratum contrasts.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import random
 import sys
+from datetime import date as _date
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +115,50 @@ def load_url_lines(path: str | Path) -> list[str]:
             else:
                 skipped += 1
     return _require_rows(out, path, "one URL per line", skipped)
+
+
+def load_phreshphish(path: str | Path) -> list[Row]:
+    """PhreshPhish derived CSV: url,date,label,target. Only the first two
+    columns become a Row; target is a brand label, not a feature input."""
+    path = Path(path)
+    rows: list[Row] = []
+    skipped = 0
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.reader(fh)
+        header = next(reader, None)
+        if header != ["url", "date", "label", "target"]:
+            raise ValueError(f"{path}: bad header {header!r}, expected url,date,label,target")
+        for record in reader:
+            if not record:
+                continue
+            if len(record) != 4:
+                skipped += 1
+                continue
+            url, raw_date, label, _target = (c.strip() for c in record)
+            if label == "phish":
+                y = 1
+            elif label == "benign":
+                y = 0
+            else:
+                skipped += 1
+                continue
+            try:
+                _date.fromisoformat(raw_date)
+            except ValueError:
+                skipped += 1
+                continue
+            low = url.lower()
+            if "://" not in low:
+                url = "http://" + url
+            if "." not in low or " " in low:
+                skipped += 1
+                continue
+            rows.append(
+                Row(url, y, registrable_domain(host_of(url)), "phreshphish", None, raw_date)
+            )
+    if skipped:
+        print(f"{path}: skipped {skipped} malformed line(s)", file=sys.stderr)
+    return _require_rows(rows, path, "url,date,label,target rows", skipped)
 
 
 def negative_rows(
@@ -250,6 +296,24 @@ def group_split(rows: list[Row], frac: float, seed: int = 0) -> tuple[list[int],
     test_set = set(test)
     train = [i for i in range(len(rows)) if i not in test_set]
     return train, sorted(test)
+
+
+def time_split(rows: list[Row], cutoff: str) -> tuple[list[int], list[int]]:
+    """Train on rows dated before `cutoff`, test on rows on or after it.
+
+    Shared registrable domains are removed from the training half, the same
+    asymmetry as ADR 0002: the test half holds the positives, so dropping there
+    would discard the measurement.
+    """
+    train = [i for i, r in enumerate(rows) if r.date is not None and r.date < cutoff]
+    test = [i for i, r in enumerate(rows) if r.date is not None and r.date >= cutoff]
+    if not train or not test:
+        raise ValueError("time_split: one side is empty")
+    shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
+    train = [i for i in train if rows[i].domain not in shared]
+    if not train:
+        raise ValueError("time_split: training half empty after domain removal")
+    return sorted(train), sorted(test)
 
 
 def describe(rows: list[Row]) -> dict[tuple[str, str], Counts]:
