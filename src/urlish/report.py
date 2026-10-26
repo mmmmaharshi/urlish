@@ -68,6 +68,7 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
     base = exp.base
     dom = exp.domain
     temporal = exp.temporal
+    baseline = exp.baseline
     shift = exp.popularity
     cross_h = exp.collection_host
     cross_full = exp.collection_full
@@ -141,6 +142,10 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         "hosts do not impersonate a brand by string similarity; they are throwaway domains\n"
         "on cheap TLDs. Rules and classifiers cover different halves of the problem, which\n"
         "is the argument for shipping both.\n",
+        f"**A published-style baseline.** A character n-gram logistic regression, trained\n"
+        f"and calibrated the same way, reaches {baseline.recall:.1%} recall at {baseline.fpr:.2%}\n"
+        f"realised FPR (AUC {baseline.auc:.3f}). It is a cheaper detector than the tree\n"
+        "model and does not beat it.\n",
         "## Operating point of the shipped detector\n",
         f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The artifact holds the model and\n"
         "threshold of the domain-disjoint row: fitted on the training half, calibrated on a\n"
