@@ -67,6 +67,7 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
     """The whole report, from the measured results and the inputs it read."""
     base = exp.base
     dom = exp.domain
+    temporal = exp.temporal
     shift = exp.popularity
     cross_h = exp.collection_host
     cross_full = exp.collection_full
@@ -108,7 +109,11 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         f"{shift.recall:.1%}. A shipped detector would block roughly 1 in\n"
         f"{1 / max(shift.fpr, 1e-9):.0f} legitimate popular domains while every ranking\n"
         "metric looked healthy.\n",
-        f"**Collection shift is the largest honest drop.** With negatives taken from\n"
+        f"**Time costs ranking.** Training on rows dated before the cutoff and testing on\n"
+        f"rows dated after it drops AUC to {temporal.auc:.3f} and recall to\n"
+        f"{temporal.recall:.1%}; the threshold calibrated on the earlier period realises\n"
+        f"{temporal.fpr:.2%} false positives on the later one.\n",
+        f"**Cross-collection transfer is the largest honest drop.** With negatives taken from\n"
         f"two independent lists, this row changes the collector on both sides - Phishing\n"
         f"Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the\n"
         f"host-only view fixed. AUC falls {base.auc:.3f} -> {cross_h.auc:.3f} and\n"
@@ -133,15 +138,18 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The artifact holds the model and\n"
         "threshold of the domain-disjoint row: fitted on the training half, calibrated on a\n"
         "quarter of it, and measured on the test half that neither half saw. That row reports\n"
-        f"{dom.fpr:.2%} false positives at {dom.recall:.1%} recall, inside the 1% budget. The\n"
+        f"{dom.fpr:.2%} false positives at {dom.recall:.1%} recall. The budget was spent\n"
+        f"on the calibration set; this test distribution spends {dom.fpr:.2%} of it.\n"
         "budget is spent on the calibration set, and a different test distribution can spend\n"
         "more.\n"
         "Scoring at 0.5 instead would realise a false-positive rate many times over budget,\n"
         "because a gradient-boosted probability is not a decision threshold.\n",
         "## Limitations\n",
-        "- Single snapshot. No dates in these collections, so there is no temporal split. A\n"
-        "  temporal holdout is the missing experiment and is strictly harder than any row\n"
-        "  above.\n",
+        "- Single dated collection. The temporal row uses one collection's dates, and the\n"
+        "  leakage filter in that collection's paper runs on HTML, which this benchmark\n"
+        "  does not read, so the row is a URL-level approximation.\n"
+        "- About four in ten negative rows are unranked in Tranco and are excluded from\n"
+        "  the popularity row; the report prints that coverage.\n",
         "- Labels are collection membership, not ground truth. Collections contain dead,\n"
         "  parked and occasionally mislabelled hosts, and a popular domain is not a\n"
         "  guarantee of safety.\n",
