@@ -91,7 +91,7 @@ def run_transformer(
             self.enc = nn.TransformerEncoder(enc, num_layers=layers)
             self.head = nn.Linear(dim, 1)
 
-        def forward(self, x):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
             mask = x == 0
             h = self.emb(x) + self.pos(torch.arange(x.size(1), device=x.device).unsqueeze(0))
             h = self.enc(h, src_key_padding_mask=mask)
