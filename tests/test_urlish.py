@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from urlish.baselines import run_char_ngram
 from urlish.core import (
     canonicalize,
     fold,
@@ -32,7 +33,6 @@ from urlish.data import (
     select,
     time_split,
 )
-from urlish.baselines import run_char_ngram
 from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize
 from urlish.metrics import at_threshold, threshold_at_fpr
 

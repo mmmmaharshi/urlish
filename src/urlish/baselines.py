@@ -15,7 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
 from . import metrics
-from .data import Row, random_split
+from .data import Row
 from .report import Result
 
 
@@ -78,10 +78,7 @@ def run_transformer(
         return [char_to_idx.get(c, 0) for c in s[:max_len]] + [0] * (max_len - min(len(s), max_len))
 
     X = np.array([encode(u) for u in urls], dtype=np.int64)
-    Xtr = torch.tensor(X[train_idx], dtype=torch.long)
-    ytr = torch.tensor(y[train_idx], dtype=torch.float32)
     Xte = torch.tensor(X[test_idx], dtype=torch.long)
-    yte = torch.tensor(y[test_idx], dtype=torch.float32)
 
     class TinyTransformer(nn.Module):
         def __init__(self, vocab: int, dim: int = 64, heads: int = 4, layers: int = 2):
@@ -109,7 +106,6 @@ def run_transformer(
     Xfit = torch.tensor(X[fit_idx], dtype=torch.long)
     yfit = torch.tensor(y[fit_idx], dtype=torch.float32)
     Xcal = torch.tensor(X[cal_idx], dtype=torch.long)
-    ycal = torch.tensor(y[cal_idx], dtype=torch.float32)
 
     model.train()
     for _ in range(3):

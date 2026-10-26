@@ -13,9 +13,8 @@ from dataclasses import dataclass
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
-from . import ROOT, artifact, report
+from . import ROOT, artifact, baselines, report
 from .core import host_of, registrable_domain
-from . import baselines
 from .data import (
     Counts,
     Row,
