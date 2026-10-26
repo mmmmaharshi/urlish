@@ -63,6 +63,11 @@ def test_threshold_is_calibrated_on_the_shipped_model() -> None:
     # The reported operating point is measured on rows neither half saw. The
     # budget is spent on the calibration set, so a different distribution may
     # spend more; the report documents that rather than asserting it here.
+    X_test, y_test = score(rows, brands, test)
+    held_out = at_threshold(
+        bundle["model"].predict_proba(X_test)[:, 1], y_test, bundle["threshold"]
+    )
+    assert held_out["fpr"] <= 0.05, held_out
 
 
 def test_test_half_is_domain_disjoint_from_the_shipped_model() -> None:

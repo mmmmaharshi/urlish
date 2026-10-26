@@ -29,9 +29,9 @@ prose.
 
 Three things fall out of that table:
 
-1. **Splitting by domain buys almost nothing.** The domain-disjoint row loses
-   little recall and keeps its AUC. Phishing hosts are mostly single-use, so
-   there was little leakage to remove.
+1. **Splitting by domain still buys little.** The domain-disjoint row loses a
+   few points of recall and keeps its AUC. Phishing hosts are mostly single-use,
+   so there was little leakage to remove.
 2. **Popularity shift breaks the threshold before it breaks the ranking.** AUC
    barely moves while the threshold calibrated for the 1% budget realises more
    than twice that on the long tail - one blocked popular domain in a few dozen.
@@ -141,12 +141,15 @@ phishing" ([ADR 1](docs/adr/0001-synthesise-www-prefixes.md)).
 
 | collection | what |
 |---|---|
-| Tranco top 100k | negatives, two popularity bands |
-| Majestic Million | negatives, head band only |
-| Phishing Army | positives, host-only |
-| OpenPhish | positives, full paths |
+| PhreshPhish | dated corpus: positives and negatives (July 2024 to December 2025) |
+| Tranco top 100k | popularity ranks and brand list |
+| Majestic Million | negatives, cross-dataset test half |
+| OpenPhish | positives, cross-dataset test half |
 
 Exact row counts per collection are in [REPORT.md](REPORT.md).
+
+PhreshPhish is released under CC BY 4.0 by Dalton et al. (arXiv:2507.10854);
+cite it if you use these numbers.
 
 `data/majestic.csv` is trimmed to the top 60k of the 1M-row download; the full
 file is 80 MB and only the head band is used. Tranco is dated - cite the list ID
@@ -160,6 +163,7 @@ curl -sO https://tranco-list.eu/download/<list_id>/100000     # -> data/tranco.c
 curl -s https://downloads.majestic.com/majestic_million.csv   # keep 60k rows
 curl -sO https://phishing.army/download/phishing_army_blocklist_extended.txt
 curl -sO https://openphish.com/feed.txt
+uv run scripts/fetch_phreshphish.py    # ~25 MB, four columns only
 ```
 
 ## Known limits

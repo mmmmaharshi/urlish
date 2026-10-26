@@ -1,7 +1,7 @@
 """Dataset assembly and the split strategies that decide the paper's numbers.
 
 Two independent axes decide where a row came from: the collection it belongs to
-(`phishing_army`, `openphish`, `tranco`, `majestic`) and, for negatives, the
+(`phreshphish`, `openphish`, `tranco`, `majestic`) and, for negatives, the
 popularity stratum (`head`, `tail`). Keeping them separate is the point: a split
 that varies one axis while holding the other is the only way to attribute a drop
 to either.

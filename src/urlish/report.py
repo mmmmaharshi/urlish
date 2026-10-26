@@ -78,6 +78,7 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
     lines = [
         "# urlish benchmark report\n",
         f"urlish {__version__} · {inputs}\n",
+        f"Temporal cutoff: {exp.cutoff}. Corpus dates: {exp.date_range[0]} to {exp.date_range[1]}.\n",
         f"Target false-positive rate: {TARGET_FPR:.0%}. Thresholds are picked on held-out\n"
         "training data, never on the test set.\n",
         "## Dataset\n",
@@ -87,8 +88,11 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         lines.append(f"| {collection} | {stratum} | {s['n']:,} | {s['pos']:,} | {s['neg']:,} |")
     lines += [
         f"| **main dataset** | | **{exp.n_base:,}** | **{exp.n_pos:,}** | **{exp.n_neg:,}** |\n",
+        f"Of the {exp.n_neg:,} main-corpus negatives, {exp.ranked_neg:,} carry a Tranco\n"
+        "stratum and enter the popularity row; the rest are unranked and are excluded\n"
+        "from it.\n",
         f"Majestic contributes {exp.majestic:,} negatives and is used only by the\n"
-        "collection-shift rows, so it cannot move the other numbers.\n",
+        "cross-dataset rows, so it cannot move the other numbers.\n",
         "## Results\n",
         table(exp.results),
         "\n## What the numbers say\n",
@@ -114,11 +118,13 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         f"{temporal.recall:.1%}; the threshold calibrated on the earlier period realises\n"
         f"{temporal.fpr:.2%} false positives on the later one.\n",
         f"**Cross-collection transfer is the largest honest drop.** With negatives taken from\n"
-        f"two independent lists, this row changes the collector on both sides - Phishing\n"
-        f"Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the\n"
+        f"two independent lists, this row changes the collector on both sides - PhreshPhish\n"
+        f"to OpenPhish, Tranco to Majestic - while holding the popularity band and the\n"
         f"host-only view fixed. AUC falls {base.auc:.3f} -> {cross_h.auc:.3f} and\n"
         f"recall {base.recall:.1%} -> {cross_h.recall:.1%}, with a realised FPR of\n"
-        f"{cross_h.fpr:.2%} on negatives from a list it never saw.\n",
+        f"{cross_h.fpr:.2%} on negatives from a list it never saw. The test half is also\n"
+        "collected after the training half, so this row is both cross-collection and\n"
+        "out of time.\n",
         f"{exp.dropped:,} rows were dropped from the training half because their\n"
         "registrable domain appeared in the test half: the collections overlap heavily,\n"
         "and a collection split that ignores that is measuring leakage, not transfer.\n",
@@ -138,18 +144,19 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The artifact holds the model and\n"
         "threshold of the domain-disjoint row: fitted on the training half, calibrated on a\n"
         "quarter of it, and measured on the test half that neither half saw. That row reports\n"
-        f"{dom.fpr:.2%} false positives at {dom.recall:.1%} recall. The budget was spent\n"
-        f"on the calibration set; this test distribution spends {dom.fpr:.2%} of it.\n"
-        "budget is spent on the calibration set, and a different test distribution can spend\n"
-        "more.\n"
+        f"{dom.fpr:.2%} false positives at {dom.recall:.1%} recall. The budget is spent\n"
+        "on the calibration set, and a different test distribution can spend more.\n"
         "Scoring at 0.5 instead would realise a false-positive rate many times over budget,\n"
         "because a gradient-boosted probability is not a decision threshold.\n",
         "## Limitations\n",
         "- Single dated collection. The temporal row uses one collection's dates, and the\n"
-        "  leakage filter in that collection's paper runs on HTML, which this benchmark\n"
-        "  does not read, so the row is a URL-level approximation.\n"
+        "  leakage filter in that collection's paper runs on page content, which this\n"
+        "  benchmark discards: only the URL string is used, so the row is a URL-level\n"
+        "  approximation.\n"
         "- About four in ten negative rows are unranked in Tranco and are excluded from\n"
-        "  the popularity row; the report prints that coverage.\n",
+        "  the popularity row; the report prints that coverage.\n"
+        "- Collection dates are the upstream dataset's labels, not dates this repository\n"
+        "  measured; every claim about time inherits that limit.\n",
         "- Labels are collection membership, not ground truth. Collections contain dead,\n"
         "  parked and occasionally mislabelled hosts, and a popular domain is not a\n"
         "  guarantee of safety.\n",

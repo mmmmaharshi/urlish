@@ -267,22 +267,29 @@ def test_phreshphish_loader() -> None:
 
 
 def test_time_split() -> None:
+    # site0.com appears on both sides of the cutoff, so the shared-domain
+    # removal has something to drop from the training half.
     rows = [
+        Row("http://site0.com/", 0, "site0.com", "phreshphish", None, "2024-07-01"),
+        Row("http://site0.com/", 1, "site0.com", "phreshphish", None, "2025-01-01"),
+    ] + [
         Row(
             f"http://{d}/",
             int(i % 2),
             d,
             "phreshphish",
             None,
-            "2024-07-01" if i < 4 else "2025-01-01",
+            "2024-07-01" if i < 3 else "2025-01-01",
         )
-        for i, d in enumerate(f"site{n}.com" for n in range(8))
+        for i, d in enumerate(f"site{n}.com" for n in range(1, 7))
     ]
     train, test = time_split(rows, "2025-01-01")
     assert all(rows[i].date < "2025-01-01" for i in train)
     assert all(rows[i].date >= "2025-01-01" for i in test)
     shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
     assert not shared, shared
+    assert "site0.com" not in {rows[i].domain for i in train}
+    assert "site0.com" in {rows[i].domain for i in test}
 
     # A cutoff that empties one side must raise.
     with pytest.raises(ValueError):

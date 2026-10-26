@@ -2,6 +2,8 @@
 
 urlish 0.2.0 · phreshphish 517faea7 · tranco 919de10c · majestic 22269fcd · openphish 292d9656
 
+Temporal cutoff: 2025-09-01. Corpus dates: 2024-07-03 to 2025-12-16.
+
 Target false-positive rate: 1%. Thresholds are picked on held-out
 training data, never on the test set.
 
@@ -16,8 +18,12 @@ training data, never on the test set.
 | phreshphish | tail | 10,151 | 0 | 10,151 |
 | **main dataset** | | **72,000** | **12,000** | **60,000** |
 
+Of the 60,000 main-corpus negatives, 35,091 carry a Tranco
+stratum and enter the popularity row; the rest are unranked and are excluded
+from it.
+
 Majestic contributes 10,000 negatives and is used only by the
-collection-shift rows, so it cannot move the other numbers.
+cross-dataset rows, so it cannot move the other numbers.
 
 ## Results
 
@@ -61,13 +67,15 @@ rows dated after it drops AUC to 0.949 and recall to
 0.85% false positives on the later one.
 
 **Cross-collection transfer is the largest honest drop.** With negatives taken from
-two independent lists, this row changes the collector on both sides - Phishing
-Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the
+two independent lists, this row changes the collector on both sides - PhreshPhish
+to OpenPhish, Tranco to Majestic - while holding the popularity band and the
 host-only view fixed. AUC falls 0.981 -> 0.836 and
 recall 78.1% -> 46.0%, with a realised FPR of
-0.89% on negatives from a list it never saw.
+0.89% on negatives from a list it never saw. The test half is also
+collected after the training half, so this row is both cross-collection and
+out of time.
 
-56,895 rows were dropped from the training half because their
+31,955 rows were dropped from the training half because their
 registrable domain appeared in the test half: the collections overlap heavily,
 and a collection split that ignores that is measuring leakage, not transfer.
 
@@ -90,20 +98,21 @@ is the argument for shipping both.
 `urlish` scores at **0.8744**. The artifact holds the model and
 threshold of the domain-disjoint row: fitted on the training half, calibrated on a
 quarter of it, and measured on the test half that neither half saw. That row reports
-1.28% false positives at 62.6% recall. The budget was spent
-on the calibration set; this test distribution spends 1.28% of it.
-budget is spent on the calibration set, and a different test distribution can spend
-more.
+1.28% false positives at 62.6% recall. The budget is spent
+on the calibration set, and a different test distribution can spend more.
 Scoring at 0.5 instead would realise a false-positive rate many times over budget,
 because a gradient-boosted probability is not a decision threshold.
 
 ## Limitations
 
 - Single dated collection. The temporal row uses one collection's dates, and the
-  leakage filter in that collection's paper runs on HTML, which this benchmark
-  does not read, so the row is a URL-level approximation.
+  leakage filter in that collection's paper runs on page content, which this
+  benchmark discards: only the URL string is used, so the row is a URL-level
+  approximation.
 - About four in ten negative rows are unranked in Tranco and are excluded from
   the popularity row; the report prints that coverage.
+- Collection dates are the upstream dataset's labels, not dates this repository
+  measured; every claim about time inherits that limit.
 
 - Labels are collection membership, not ground truth. Collections contain dead,
   parked and occasionally mislabelled hosts, and a popular domain is not a

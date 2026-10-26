@@ -22,7 +22,6 @@ from .data import (
     describe,
     digest,
     group_split,
-    host_of,
     load_majestic,
     load_phreshphish,
     load_tranco,
@@ -198,6 +197,9 @@ class Experiment:
     domain: Result
     temporal: Result
     popularity: Result
+    cutoff: str
+    date_range: tuple[str, str]
+    ranked_neg: int
     collection_host: Result
     collection_full: Result
     rules: Result
@@ -249,7 +251,10 @@ def run_experiments(
     majestic_idx = select(rows, collections={"majestic"}, stratum="head", label=0)
 
     phish_dates = sorted(r.date for r in rows if r.collection == "phreshphish" and r.date)
-    cutoff = phish_dates[int(0.8 * len(phish_dates))][:7] + "-01"
+    # 80th percentile row's month, as a date: the cutoff is the first day of that month.
+    idx = int(0.8 * len(phish_dates))
+    cutoff = phish_dates[idx][:7] + "-01"
+    date_range = (phish_dates[0], phish_dates[-1])
     print(f"  temporal cutoff: {cutoff}", file=sys.stderr)
 
     def evaluated(
@@ -303,7 +308,8 @@ def run_experiments(
     shipped, shipped_threshold = fit_pair(X, y, d_fit, d_cal)
 
     base_pos = int(y[base_idx].sum())
-    cross_dropped = len(base_idx) + len(head_idx) - len(x_train)
+    cross_dropped = len(base_idx) - len(x_train)
+    ranked_neg = sum(1 for i in base_idx if rows[i].y == 0 and rows[i].stratum is not None)
     return Experiment(
         summary=describe(rows),
         base=base,
@@ -318,6 +324,9 @@ def run_experiments(
         n_pos=base_pos,
         n_neg=len(base_idx) - base_pos,
         majestic=len(majestic_idx),
+        cutoff=cutoff,
+        date_range=date_range,
+        ranked_neg=ranked_neg,
         shipped=shipped,
         shipped_threshold=shipped_threshold,
         trained_on=len(d_fit),
