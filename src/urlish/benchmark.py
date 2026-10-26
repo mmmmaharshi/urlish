@@ -18,7 +18,7 @@ from .core import host_of, registrable_domain
 from .data import (
     Counts,
     Row,
-    _dedupe,
+    dedupe,
     describe,
     digest,
     group_split,
@@ -164,7 +164,7 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
         f"({ranked:,} ranked in Tranco)",
         file=sys.stderr,
     )
-    base_rows = _dedupe(sampled_pos + sampled_neg)
+    base_rows = dedupe(sampled_pos + sampled_neg)
     # shortcut: stride sampling over file order keeps every month roughly represented
     # but is not stratified by date; replace with per-month sampling if the
     # temporal row looks lopsided.

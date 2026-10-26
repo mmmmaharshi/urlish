@@ -44,7 +44,7 @@ class Row:
     date: str | None = None  # collection date, when the source provides one
 
 
-def _dedupe(rows: list[Row]) -> list[Row]:
+def dedupe(rows: list[Row]) -> list[Row]:
     seen: set[tuple[str, int]] = set()
     out = []
     for row in rows:
@@ -227,7 +227,7 @@ def build_dataset(
             )
         )
 
-    return _dedupe(rows)
+    return dedupe(rows)
 
 
 def select(

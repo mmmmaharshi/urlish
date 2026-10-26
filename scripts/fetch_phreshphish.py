@@ -63,7 +63,10 @@ def main() -> int:
             rows += n
             bytes_read += table.nbytes
             print(f"{shard}: {n:,} rows", file=sys.stderr)
-    print(f"wrote {rows:,} rows to {OUT} ({bytes_read:,} bytes of columns)", file=sys.stderr)
+    print(
+        f"wrote {rows:,} rows to {OUT} ({bytes_read:,} uncompressed bytes of columns)",
+        file=sys.stderr,
+    )
     return 0
 
 
