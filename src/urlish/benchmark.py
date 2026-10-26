@@ -156,7 +156,8 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
         return None
 
     sampled_neg = [
-        Row(r.url, r.y, r.domain, r.collection, stratum_for(r.domain), r.date) for r in sampled_neg
+        Row(r.url, r.y, r.domain, r.collection, stratum_for(r.domain), r.date, r.target)
+        for r in sampled_neg
     ]
     ranked = sum(1 for r in sampled_neg if r.stratum is not None)
     print(
@@ -184,7 +185,42 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
         strata=("head",),
     )
     print("building brand index...", file=sys.stderr)
-    brands = BrandIndex.from_tranco(files["tranco"], top=2000)
+    from .core import fold as _fold
+
+    entries: list[tuple[str, str]] = []
+    # Tranco top-2000 brands (Western, as before).
+    with open(files["tranco"], encoding="utf-8") as fh:
+        for line in fh:
+            parts = line.strip().split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                rank = int(parts[0])
+            except ValueError:
+                continue
+            if rank > 2000:
+                break
+            reg = registrable_domain(parts[1])
+            label = reg.split(".")[0] if reg else ""
+            if label:
+                entries.append((label, reg))
+    # PhreshPhish's own target brands, so the rules fire on this corpus too.
+    tranco_primary = {
+        _fold(registrable_domain(domain).split(".")[0]): registrable_domain(domain)
+        for _, domain in tranco
+    }
+    seen_targets: set[str] = set()
+    for r in raw:
+        if r.y != 1 or not r.target:
+            continue
+        folded = _fold(r.target)
+        if folded in seen_targets:
+            continue
+        seen_targets.add(folded)
+        primary = tranco_primary.get(folded, f"{folded}.com" if folded else "")
+        if r.target and primary:
+            entries.append((r.target, primary))
+    brands = BrandIndex(entries, max_dist=2)
     return base_rows + openphish_rows + majestic_rows, brands, snapshot
 
 

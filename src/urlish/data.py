@@ -42,6 +42,7 @@ class Row:
     collection: str  # upstream list the row came from
     stratum: str | None  # "head"/"tail" for negatives, None for positives
     date: str | None = None  # collection date, when the source provides one
+    target: str | None = None  # impersonated brand, for positive rows
 
 
 def dedupe(rows: list[Row]) -> list[Row]:
@@ -134,7 +135,7 @@ def load_phreshphish(path: str | Path) -> list[Row]:
             if len(record) != 4:
                 skipped += 1
                 continue
-            url, raw_date, label, _target = (c.strip() for c in record)
+            url, raw_date, label, raw_target = (c.strip() for c in record)
             if label == "phish":
                 y = 1
             elif label == "benign":
