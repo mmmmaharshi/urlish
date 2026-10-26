@@ -32,6 +32,7 @@ from urlish.data import (
     select,
     time_split,
 )
+from urlish.baselines import run_char_ngram
 from urlish.features import FEATURE_NAMES, BrandIndex, analyze, featurize
 from urlish.metrics import at_threshold, threshold_at_fpr
 
@@ -290,6 +291,19 @@ def test_time_split() -> None:
     assert not shared, shared
     assert "site0.com" not in {rows[i].domain for i in train}
     assert "site0.com" in {rows[i].domain for i in test}
+
+
+def test_baseline_runs() -> None:
+    rows = [
+        Row(f"http://site{n}.com/", int(n % 2), f"site{n}.com", "phreshphish", None)
+        for n in range(200)
+    ]
+    y = np.array([r.y for r in rows], dtype=int)
+    train = list(range(160))
+    test = list(range(160, 200))
+    r = run_char_ngram(rows, y, train, test)
+    assert 0.0 <= r.recall <= 1.0
+    assert r.name == "char n-gram logistic regression"
 
     # A cutoff that empties one side must raise.
     with pytest.raises(ValueError):

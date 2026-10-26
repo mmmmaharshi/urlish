@@ -15,6 +15,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 
 from . import ROOT, artifact, report
 from .core import host_of, registrable_domain
+from . import baselines
 from .data import (
     Counts,
     Row,
@@ -207,6 +208,7 @@ class Experiment:
     base: Result
     domain: Result
     temporal: Result
+    baseline: Result
     popularity: Result
     cutoff: str
     date_range: tuple[str, str]
@@ -231,6 +233,7 @@ class Experiment:
             self.base,
             self.domain,
             self.temporal,
+            self.baseline,
             self.popularity,
             self.collection_host,
             self.collection_full,
@@ -316,6 +319,9 @@ def run_experiments(
         at_threshold(imp[d_test], y[d_test], thr_imp),
     )
 
+    print("  char n-gram baseline...", file=sys.stderr)
+    baseline = baselines.run_char_ngram(rows, y, d_train, d_test)
+
     print("fitting the shipped model...", file=sys.stderr)
     d_fit, d_cal = calibration_split(rows, d_train, True)
     shipped, shipped_threshold = fit_pair(X, y, d_fit, d_cal)
@@ -328,6 +334,7 @@ def run_experiments(
         base=base,
         domain=domain,
         temporal=temporal,
+        baseline=baseline,
         popularity=popularity,
         collection_host=collection_host,
         collection_full=collection_full,
