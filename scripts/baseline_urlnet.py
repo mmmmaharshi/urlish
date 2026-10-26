@@ -24,7 +24,6 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 
-
 DATA = Path("data") / "phreshphish.csv"
 MAX_LEN = 200
 EPOCHS = 2
