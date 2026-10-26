@@ -225,16 +225,21 @@ class Experiment:
     shipped_threshold: float
     trained_on: int
     calibrated_on: int
+    transformer: Result | None = None
 
     @property
     def results(self) -> list[Result]:
         """The six rows in report order."""
-        return [
+        r = [
             self.base,
             self.domain,
             self.temporal,
             self.baseline,
-            self.popularity,
+        ]
+        if self.transformer is not None:
+            r.append(self.transformer)
+        r.append(self.popularity)
+        return r + [
             self.collection_host,
             self.collection_full,
             self.rules,
@@ -322,6 +327,9 @@ def run_experiments(
     print("  char n-gram baseline...", file=sys.stderr)
     baseline = baselines.run_char_ngram(rows, y, d_train, d_test)
 
+    print("  transformer baseline...", file=sys.stderr)
+    transformer = baselines.run_transformer(rows, y, d_train, d_test)
+
     print("fitting the shipped model...", file=sys.stderr)
     d_fit, d_cal = calibration_split(rows, d_train, True)
     shipped, shipped_threshold = fit_pair(X, y, d_fit, d_cal)
@@ -335,6 +343,7 @@ def run_experiments(
         domain=domain,
         temporal=temporal,
         baseline=baseline,
+        transformer=transformer,
         popularity=popularity,
         collection_host=collection_host,
         collection_full=collection_full,

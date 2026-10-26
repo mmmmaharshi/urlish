@@ -32,7 +32,7 @@ cross-dataset rows, so it cannot move the other numbers.
 | random rows | 43,200 | 14,400 | 16.7% | **78.1%** | 94.2% | 0.981 | 0.96% |
 | domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
 | temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
-| char n-gram logistic regression | 43,154 | 14,462 | 12.4% | **72.8%** | 89.8% | 0.969 | 1.18% |
+| char n-gram logistic regression | 43,154 | 14,462 | 12.4% | **62.9%** | 85.7% | 0.956 | 1.49% |
 | popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
 | cross-dataset, host-only | 6,704 | 10,300 | 2.9% | **9.0%** | 24.8% | 0.586 | 0.82% |
 | cross-dataset, as deployed (paths kept) | 6,704 | 10,300 | 2.9% | **15.7%** | 2.3% | 0.384 | 19.76% |
@@ -95,8 +95,8 @@ on cheap TLDs. Rules and classifiers cover different halves of the problem, whic
 is the argument for shipping both.
 
 **A published-style baseline.** A character n-gram logistic regression, trained
-and calibrated the same way, reaches 72.8% recall at 1.18%
-realised FPR (AUC 0.969). It is a cheaper detector than the tree
+and calibrated the same way, reaches 62.9% recall at 1.49%
+realised FPR (AUC 0.956). It is a cheaper detector than the tree
 model and does not beat it.
 
 ## Operating point of the shipped detector
