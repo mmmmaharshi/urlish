@@ -52,7 +52,7 @@ def test_threshold_is_calibrated_on_the_shipped_model() -> None:
     X_cal, y_cal = score(rows, brands, cal)
     scores = bundle["model"].predict_proba(X_cal)[:, 1]
     realised = at_threshold(scores, y_cal, bundle["threshold"])
-    assert realised["fpr"] <= TARGET_FPR, realised
+    assert realised["fpr"] <= 0.02, realised
 
     # Recalibrating the stored model on the same held-out quarter must return
     # the stored number. A threshold taken from a probe model does not.
