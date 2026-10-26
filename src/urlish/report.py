@@ -78,7 +78,8 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
     lines = [
         "# urlish benchmark report\n",
         f"urlish {__version__} · {inputs}\n",
-        f"Temporal cutoff: {exp.cutoff}. Corpus dates: {exp.date_range[0]} to {exp.date_range[1]}.\n",
+        f"Temporal cutoff: {exp.cutoff}. Corpus dates: {exp.date_range[0]} to "
+        f"{exp.date_range[1]}.\n",
         f"Target false-positive rate: {TARGET_FPR:.0%}. Thresholds are picked on held-out\n"
         "training data, never on the test set.\n",
         "## Dataset\n",

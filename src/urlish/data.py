@@ -18,9 +18,9 @@ import hashlib
 import html as _html
 import random
 import sys
-from datetime import date as _date
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date as _date
 from pathlib import Path
 from typing import TypedDict
 
