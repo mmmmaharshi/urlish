@@ -39,6 +39,7 @@ class Row:
     domain: str  # registrable domain
     collection: str  # upstream list the row came from
     stratum: str | None  # "head"/"tail" for negatives, None for positives
+    date: str | None = None  # collection date, when the source provides one
 
 
 def _dedupe(rows: list[Row]) -> list[Row]:
