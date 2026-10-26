@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
+
 
 DATA = Path("data") / "phreshphish.csv"
 MAX_LEN = 200
@@ -155,7 +155,8 @@ def main() -> int:
     auc = float(roc_auc_score(yte_arr, test_scores))
 
     print(
-        f"\nURLNet-style baseline: recall={recall:.3f} precision={precision:.3f} AUC={auc:.3f} FPR={fpr:.3f} (train {elapsed:.0f}s)"
+        f"\nURLNet-style baseline: recall={recall:.3f} precision={precision:.3f} "
+        f"AUC={auc:.3f} FPR={fpr:.3f} (train {elapsed:.0f}s)"
     )
     return 0
 
