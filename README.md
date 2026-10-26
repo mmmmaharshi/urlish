@@ -22,8 +22,8 @@ prose.
 | domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
 | temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
 | popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
-| cross-dataset, host-only | 30,034 | 10,300 | 2.9% | **46.0%** | 60.8% | 0.836 | 0.89% |
-| cross-dataset, as deployed (paths kept) | 30,034 | 10,300 | 2.9% | **66.0%** | 38.2% | 0.814 | 3.21% |
+| cross-dataset, host-only | 6,704 | 10,300 | 2.9% | **9.0%** | 24.8% | 0.586 | 0.82% |
+| cross-dataset, as deployed (paths kept) | 6,704 | 10,300 | 2.9% | **15.7%** | 2.3% | 0.384 | 19.76% |
 | impersonation rules only (no ML) | 0 | 14,462 | 12.4% | **0.0%** | 0.0% | 0.555 | 0.00% |
 <!-- results:end -->
 

@@ -163,9 +163,9 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         f"- The collection-shift test has {cross_full.tp + cross_full.fn} positives and\n"
         f"  {cross_full.n_test - cross_full.tp - cross_full.fn:,} negatives, hence\n"
         "  the interval above. Every other split is >= 14k rows.\n",
-        "- The training collection (`phishing_army`) is host-only, so path features are\n"
-        "  unseen at fit time. That is the realistic case for a collection consumer, not a\n"
-        "  contrived one, but it is a limitation of the data, not a finding about phishing.\n",
+        "- The shipped model trains on full URLs, so path features are seen at fit time.\n"
+        "  That is the realistic case for a feed consumer, but it is a limitation of the\n"
+        "  data, not a finding about phishing.\n",
         "- Negatives come from domain lists, so even with `www.` prefixes they carry at\n"
         "  most one subdomain. Deep subdomain chains appear only in positives, and the model\n"
         "  leans on that.\n",

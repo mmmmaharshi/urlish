@@ -194,42 +194,8 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
         strata=("head",),
     )
     print("building brand index...", file=sys.stderr)
-    from .core import fold as _fold
+    brands = BrandIndex.from_tranco(files["tranco"], top=2000)
 
-    entries: list[tuple[str, str]] = []
-    # Tranco top-2000 brands (Western, as before).
-    with open(files["tranco"], encoding="utf-8") as fh:
-        for line in fh:
-            parts = line.strip().split(",")
-            if len(parts) < 2:
-                continue
-            try:
-                rank = int(parts[0])
-            except ValueError:
-                continue
-            if rank > 2000:
-                break
-            reg = registrable_domain(parts[1])
-            label = reg.split(".")[0] if reg else ""
-            if label:
-                entries.append((label, reg))
-    # PhreshPhish's own target brands, so the rules fire on this corpus too.
-    tranco_primary = {
-        _fold(registrable_domain(domain).split(".")[0]): registrable_domain(domain)
-        for _, domain in tranco
-    }
-    seen_targets: set[str] = set()
-    for r in raw:
-        if r.y != 1 or not r.target:
-            continue
-        folded = _fold(r.target)
-        if folded in seen_targets:
-            continue
-        seen_targets.add(folded)
-        primary = tranco_primary.get(folded, f"{folded}.com" if folded else "")
-        if r.target and primary:
-            entries.append((r.target, primary))
-    brands = BrandIndex(entries, max_dist=2)
     return base_rows + openphish_rows + majestic_rows, brands, snapshot
 
 
@@ -313,7 +279,9 @@ def run_experiments(
         return train_p + head_idx, test_p + tail_idx
 
     def cross_dataset() -> tuple[list[int], list[int]]:
-        train = base_idx
+        # Hold the popularity band fixed: train on head-band negatives only, so
+        # the cross-dataset row does not also shift popularity.
+        train = pos_idx + head_idx
         test = openphish_idx + majestic_idx
         shared = {rows[i].domain for i in train} & {rows[i].domain for i in test}
         return remove_domains(train, rows, shared), test

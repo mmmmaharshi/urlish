@@ -33,8 +33,8 @@ cross-dataset rows, so it cannot move the other numbers.
 | domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
 | temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
 | popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
-| cross-dataset, host-only | 30,034 | 10,300 | 2.9% | **46.0%** | 60.8% | 0.836 | 0.89% |
-| cross-dataset, as deployed (paths kept) | 30,034 | 10,300 | 2.9% | **66.0%** | 38.2% | 0.814 | 3.21% |
+| cross-dataset, host-only | 6,704 | 10,300 | 2.9% | **9.0%** | 24.8% | 0.586 | 0.82% |
+| cross-dataset, as deployed (paths kept) | 6,704 | 10,300 | 2.9% | **15.7%** | 2.3% | 0.384 | 19.76% |
 | impersonation rules only (no ML) | 0 | 14,462 | 12.4% | **0.0%** | 0.0% | 0.555 | 0.00% |
 
 
@@ -69,21 +69,21 @@ rows dated after it drops AUC to 0.949 and recall to
 **Cross-collection transfer is the largest honest drop.** With negatives taken from
 two independent lists, this row changes the collector on both sides - PhreshPhish
 to OpenPhish, Tranco to Majestic - while holding the popularity band and the
-host-only view fixed. AUC falls 0.981 -> 0.836 and
-recall 78.1% -> 46.0%, with a realised FPR of
-0.89% on negatives from a list it never saw. The test half is also
+host-only view fixed. AUC falls 0.981 -> 0.586 and
+recall 78.1% -> 9.0%, with a realised FPR of
+0.82% on negatives from a list it never saw. The test half is also
 collected after the training half, so this row is both cross-collection and
 out of time.
 
-31,955 rows were dropped from the training half because their
+63,061 rows were dropped from the training half because their
 registrable domain appeared in the test half: the collections overlap heavily,
 and a collection split that ignores that is measuring leakage, not transfer.
 
 **Keeping the URL path recovers the ranking, and then some.** The same model,
-scored on full URLs, reaches AUC 0.814 and recall
-66.0% (95% CI 60.5%-71.1% on
+scored on full URLs, reaches AUC 0.384 and recall
+15.7% (95% CI 12.0%-20.2% on
 300 positives), though the realised FPR is still
-3.21%. Path length and lure words carry real signal, which is why
+19.76%. Path length and lure words carry real signal, which is why
 `featurize()` normalises away scheme and trailing slash rather than discarding the
 path.
 
@@ -122,9 +122,9 @@ because a gradient-boosted probability is not a decision threshold.
   10,000 negatives, hence
   the interval above. Every other split is >= 14k rows.
 
-- The training collection (`phishing_army`) is host-only, so path features are
-  unseen at fit time. That is the realistic case for a collection consumer, not a
-  contrived one, but it is a limitation of the data, not a finding about phishing.
+- The shipped model trains on full URLs, so path features are seen at fit time.
+  That is the realistic case for a feed consumer, but it is a limitation of the
+  data, not a finding about phishing.
 
 - Negatives come from domain lists, so even with `www.` prefixes they carry at
   most one subdomain. Deep subdomain chains appear only in positives, and the model
