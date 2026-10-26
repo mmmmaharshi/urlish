@@ -34,3 +34,8 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 
 Network research runs inline with bounded timeouts. Background subagents can hang
 on slow fetches with no progress signal.
+
+### After a push
+
+Run `gh run list --branch main --limit 1` and confirm the run is green before
+moving on. A red CI is not done.
