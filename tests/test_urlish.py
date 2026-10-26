@@ -340,3 +340,19 @@ def test_urlnet_runs() -> None:
     assert 0.0 <= r.recall <= 1.0
     assert np.isfinite(r.auc)
     assert TIMINGS[r.name] > 0.0
+
+
+def test_transformer_runs() -> None:
+    pytest.importorskip("torch")
+    from urlish.baselines import run_transformer
+
+    rows = [
+        Row(f"http://site{n}.com/", int(n % 2), f"site{n}.com", "phreshphish", None)
+        for n in range(200)
+    ]
+    y = np.array([r.y for r in rows], dtype=int)
+    r = run_transformer(rows, y, list(range(160)), list(range(160, 200)))
+    assert r is not None
+    assert r.name == "transformer (URLTran-style)"
+    assert 0.0 <= r.recall <= 1.0
+    assert np.isfinite(r.auc)

@@ -33,6 +33,8 @@ cross-dataset rows, so it cannot move the other numbers.
 | domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
 | temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
 | char n-gram logistic regression | 43,154 | 14,462 | 12.4% | **62.9%** | 85.7% | 0.956 | 1.49% |
+| char CNN (URLNet-style) | 43,154 | 14,462 | 12.4% | **82.9%** | 88.9% | 0.982 | 1.47% |
+| transformer (URLTran-style) | 43,154 | 14,462 | 12.4% | **67.1%** | 83.3% | 0.951 | 1.91% |
 | popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
 | cross-dataset, host-only | 6,704 | 10,300 | 2.9% | **9.0%** | 24.8% | 0.586 | 0.82% |
 | cross-dataset, as deployed (paths kept) | 6,704 | 10,300 | 2.9% | **15.7%** | 2.3% | 0.384 | 19.76% |
@@ -95,10 +97,22 @@ on cheap TLDs. Rules and classifiers cover different halves of the problem, whic
 is the argument for shipping both.
 
 **A published-style baseline.** A character n-gram logistic regression
-(3- to 5-grams, TF-IDF, 1,000 features, trained in 32s) reaches
+(3- to 5-grams, TF-IDF, 1,000 features, trained in 13s) reaches
 62.9% recall at 1.49%
 realised FPR (AUC 0.956). It is a cheaper detector than the tree
 model and does not beat it.
+
+**A URLNet-style baseline.** A character CNN (32-dim embeddings, filter
+widths 3 to 6 with 256 filters each, dropout 0.5, four dense layers,
+5 epochs, trained in 3937s) reaches 82.9% recall at
+1.47% realised FPR (AUC 0.982). It trains on the same fit
+set and calibrates on the same calibration set as every other row.
+
+**A URLTran-style baseline.** A small character transformer (2 layers,
+4 heads, 3 epochs, trained in 779s) reaches 67.1%
+recall at 1.91% realised FPR (AUC 0.951). It trains on
+the same fit set and calibrates on the same calibration set as every
+other row.
 
 ## Operating point of the shipped detector
 

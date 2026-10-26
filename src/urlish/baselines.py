@@ -162,6 +162,7 @@ def run_transformer(
         return None
 
     t0 = time.time()
+    torch.manual_seed(0)
     urls = [rows[i].url for i in range(len(rows))]
     # character vocabulary
     chars = sorted(set("".join(urls)))
@@ -172,7 +173,6 @@ def run_transformer(
         return [char_to_idx.get(c, 0) for c in s[:max_len]] + [0] * (max_len - min(len(s), max_len))
 
     X = np.array([encode(u) for u in urls], dtype=np.int64)
-    Xte = torch.tensor(X[test_idx], dtype=torch.long)
 
     class TinyTransformer(nn.Module):
         def __init__(self, vocab: int, dim: int = 64, heads: int = 4, layers: int = 2):
@@ -199,22 +199,30 @@ def run_transformer(
     fit_idx, cal_idx = _split_fit_cal(rows, train_idx)
     Xfit = torch.tensor(X[fit_idx], dtype=torch.long)
     yfit = torch.tensor(y[fit_idx], dtype=torch.float32)
-    Xcal = torch.tensor(X[cal_idx], dtype=torch.long)
+
+    def scores(idx: list[int]) -> np.ndarray:
+        # full-batch attention on 30k+ rows needs gigabytes; score in batches.
+        model.eval()
+        out = []
+        with torch.no_grad():
+            for start in range(0, len(idx), 512):
+                b = idx[start : start + 512]
+                out.append(torch.sigmoid(model(torch.tensor(X[b], dtype=torch.long))).numpy())
+        return np.concatenate(out)
 
     model.train()
     for _ in range(3):
-        opt.zero_grad()
-        logits = model(Xfit)
-        loss = loss_fn(logits, yfit)
-        loss.backward()
-        opt.step()
+        perm = torch.randperm(len(Xfit))
+        for start in range(0, len(Xfit), 256):
+            b = perm[start : start + 256]
+            opt.zero_grad()
+            loss = loss_fn(model(Xfit[b]), yfit[b])
+            loss.backward()
+            opt.step()
 
-    model.eval()
-    with torch.no_grad():
-        cal_scores = torch.sigmoid(model(Xcal)).numpy()
+    cal_scores = scores(cal_idx)
     threshold = metrics.threshold_at_fpr(cal_scores, y[cal_idx], metrics.TARGET_FPR)
-    with torch.no_grad():
-        test_scores = torch.sigmoid(model(Xte)).numpy()
+    test_scores = scores(test_idx)
     elapsed = time.time() - t0
     print(f"  transformer baseline trained in {elapsed:.1f}s", file=sys.stderr)
     TIMINGS["transformer (URLTran-style)"] = elapsed
