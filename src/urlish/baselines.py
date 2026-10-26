@@ -18,6 +18,9 @@ from . import metrics
 from .data import Row
 from .report import Result
 
+TIMINGS: dict[str, float] = {}
+"""Seconds each baseline took to train, keyed by result name. The report reads this."""
+
 
 def run_char_ngram(
     rows: list[Row],
@@ -40,12 +43,103 @@ def run_char_ngram(
     )
     elapsed = time.time() - t0
     print(f"  char n-gram baseline trained in {elapsed:.1f}s", file=sys.stderr)
+    TIMINGS["char n-gram logistic regression"] = elapsed
 
     metrics_out = metrics.at_threshold(
         model.predict_proba(X[test_idx])[:, 1], y[test_idx], threshold
     )
     return Result.measured(
         "char n-gram logistic regression",
+        len(fit_idx),
+        len(test_idx),
+        float(y[test_idx].mean()),
+        metrics_out,
+    )
+
+
+URLNET_NAME = "char CNN (URLNet-style)"
+URLNET_EPOCHS = 5
+URLNET_BATCH = 256
+URLNET_MAX_LEN = 200
+
+
+def run_urlnet_cnn(
+    rows: list[Row],
+    y: np.ndarray,
+    train_idx: list[int],
+    test_idx: list[int],
+) -> Result | None:
+    """Character CNN in the style of URLNet. Returns None if torch is missing."""
+    try:
+        import torch
+        import torch.nn as nn
+    except ImportError:
+        print("  urlnet baseline skipped: torch not installed", file=sys.stderr)
+        return None
+
+    t0 = time.time()
+    torch.manual_seed(0)
+    urls = [rows[i].url for i in range(len(rows))]
+    chars = sorted(set("".join(urls)))
+    char_to_idx = {c: i + 2 for i, c in enumerate(chars)}  # 0 = pad, 1 = unknown
+
+    def encode(url: str) -> list[int]:
+        ids = [char_to_idx.get(c, 1) for c in url[:URLNET_MAX_LEN]]
+        return ids + [0] * (URLNET_MAX_LEN - len(ids))
+
+    class URLNetCNN(nn.Module):
+        def __init__(self, vocab: int):
+            super().__init__()
+            self.emb = nn.Embedding(vocab, 32, padding_idx=0)
+            self.convs = nn.ModuleList([nn.Conv1d(32, 256, k) for k in (3, 4, 5, 6)])
+            self.drop = nn.Dropout(0.5)
+            self.fc1 = nn.Linear(256 * 4, 1024)
+            self.fc2 = nn.Linear(1024, 512)
+            self.fc3 = nn.Linear(512, 256)
+            self.fc4 = nn.Linear(256, 1)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            pooled = [
+                torch.max(torch.relu(conv(self.emb(x).transpose(1, 2))), dim=2).values
+                for conv in self.convs
+            ]
+            h = self.drop(torch.cat(pooled, dim=1))
+            h = torch.relu(self.fc1(h))
+            h = torch.relu(self.fc2(h))
+            h = torch.relu(self.fc3(h))
+            return self.fc4(h).squeeze(-1)
+
+    fit_idx, cal_idx = _split_fit_cal(rows, train_idx)
+    Xfit = torch.tensor([encode(rows[i].url) for i in fit_idx], dtype=torch.long)
+    yfit = torch.tensor(y[fit_idx], dtype=torch.float32)
+    Xcal = torch.tensor([encode(rows[i].url) for i in cal_idx], dtype=torch.long)
+    Xte = torch.tensor([encode(rows[i].url) for i in test_idx], dtype=torch.long)
+
+    model = URLNetCNN(len(chars) + 2)
+    opt = torch.optim.Adam(model.parameters())
+    loss_fn = nn.BCEWithLogitsLoss()
+    model.train()
+    for _ in range(URLNET_EPOCHS):
+        perm = torch.randperm(len(Xfit))
+        for start in range(0, len(Xfit), URLNET_BATCH):
+            b = perm[start : start + URLNET_BATCH]
+            opt.zero_grad()
+            loss = loss_fn(model(Xfit[b]), yfit[b])
+            loss.backward()
+            opt.step()
+
+    model.eval()
+    with torch.no_grad():
+        cal_scores = torch.sigmoid(model(Xcal)).numpy()
+        test_scores = torch.sigmoid(model(Xte)).numpy()
+    elapsed = time.time() - t0
+    print(f"  urlnet baseline trained in {elapsed:.1f}s", file=sys.stderr)
+    TIMINGS[URLNET_NAME] = elapsed
+
+    threshold = metrics.threshold_at_fpr(cal_scores, y[cal_idx], metrics.TARGET_FPR)
+    metrics_out = metrics.at_threshold(test_scores, y[test_idx], threshold)
+    return Result.measured(
+        URLNET_NAME,
         len(fit_idx),
         len(test_idx),
         float(y[test_idx].mean()),
@@ -123,6 +217,7 @@ def run_transformer(
         test_scores = torch.sigmoid(model(Xte)).numpy()
     elapsed = time.time() - t0
     print(f"  transformer baseline trained in {elapsed:.1f}s", file=sys.stderr)
+    TIMINGS["transformer (URLTran-style)"] = elapsed
 
     metrics_out = metrics.at_threshold(test_scores, y[test_idx], threshold)
     return Result.measured(

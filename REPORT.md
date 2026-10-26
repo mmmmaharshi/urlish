@@ -94,8 +94,9 @@ hosts do not impersonate a brand by string similarity; they are throwaway domain
 on cheap TLDs. Rules and classifiers cover different halves of the problem, which
 is the argument for shipping both.
 
-**A published-style baseline.** A character n-gram logistic regression, trained
-and calibrated the same way, reaches 62.9% recall at 1.49%
+**A published-style baseline.** A character n-gram logistic regression
+(3- to 5-grams, TF-IDF, 1,000 features, trained in 32s) reaches
+62.9% recall at 1.49%
 realised FPR (AUC 0.956). It is a cheaper detector than the tree
 model and does not beat it.
 

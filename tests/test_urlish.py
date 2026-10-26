@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import io
 import re
 import tempfile
@@ -11,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from urlish.baselines import run_char_ngram
+from urlish.baselines import TIMINGS, run_char_ngram, run_urlnet_cnn
 from urlish.core import (
     canonicalize,
     fold,
@@ -304,9 +305,38 @@ def test_baseline_runs() -> None:
     r = run_char_ngram(rows, y, train, test)
     assert 0.0 <= r.recall <= 1.0
     assert r.name == "char n-gram logistic regression"
+    assert TIMINGS[r.name] > 0.0
 
     # A cutoff that empties one side must raise.
     with pytest.raises(ValueError):
         time_split(rows, "2023-01-01")
     with pytest.raises(ValueError):
         time_split(rows, "2026-01-01")
+
+
+def test_urlnet_skipped_without_torch() -> None:
+    """No torch on this box: the CNN row must skip, not crash."""
+    if importlib.util.find_spec("torch") is not None:
+        pytest.skip("torch present: skip-path does not apply")
+    rows = [
+        Row(f"http://site{n}.com/", int(n % 2), f"site{n}.com", "phreshphish", None)
+        for n in range(200)
+    ]
+    y = np.array([r.y for r in rows], dtype=int)
+    assert run_urlnet_cnn(rows, y, list(range(160)), list(range(160, 200))) is None
+
+
+def test_urlnet_runs() -> None:
+    torch = pytest.importorskip("torch")
+    assert torch is not None
+    rows = [
+        Row(f"http://site{n}.com/", int(n % 2), f"site{n}.com", "phreshphish", None)
+        for n in range(200)
+    ]
+    y = np.array([r.y for r in rows], dtype=int)
+    r = run_urlnet_cnn(rows, y, list(range(160)), list(range(160, 200)))
+    assert r is not None
+    assert r.name == "char CNN (URLNet-style)"
+    assert 0.0 <= r.recall <= 1.0
+    assert np.isfinite(r.auc)
+    assert TIMINGS[r.name] > 0.0

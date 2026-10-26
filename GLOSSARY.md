@@ -83,6 +83,10 @@ influences either.
 
 ## Measurement
 
+**Baseline**:
+A published-style detector measured on the same splits, not a split strategy.
+_Avoid_: SOTA, competitor
+
 **Target FPR**:
 The false-positive budget, 1%, spent on the calibration set.
 

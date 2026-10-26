@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -225,6 +225,8 @@ class Experiment:
     trained_on: int
     calibrated_on: int
     transformer: Result | None = None
+    urlnet: Result | None = None
+    timings: dict[str, float] = field(default_factory=dict)
 
     @property
     def results(self) -> list[Result]:
@@ -235,6 +237,8 @@ class Experiment:
             self.temporal,
             self.baseline,
         ]
+        if self.urlnet is not None:
+            r.append(self.urlnet)
         if self.transformer is not None:
             r.append(self.transformer)
         r.append(self.popularity)
@@ -326,6 +330,9 @@ def run_experiments(
     print("  char n-gram baseline...", file=sys.stderr)
     baseline = baselines.run_char_ngram(rows, y, d_train, d_test)
 
+    print("  urlnet baseline...", file=sys.stderr)
+    urlnet = baselines.run_urlnet_cnn(rows, y, d_train, d_test)
+
     print("  transformer baseline...", file=sys.stderr)
     transformer = baselines.run_transformer(rows, y, d_train, d_test)
 
@@ -342,6 +349,7 @@ def run_experiments(
         domain=domain,
         temporal=temporal,
         baseline=baseline,
+        urlnet=urlnet,
         transformer=transformer,
         popularity=popularity,
         collection_host=collection_host,
@@ -359,6 +367,7 @@ def run_experiments(
         shipped_threshold=shipped_threshold,
         trained_on=len(d_fit),
         calibrated_on=len(d_cal),
+        timings=dict(baselines.TIMINGS),
     )
 
 

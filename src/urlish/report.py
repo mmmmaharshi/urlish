@@ -73,6 +73,7 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
     cross_h = exp.collection_host
     cross_full = exp.collection_full
     rules = exp.rules
+    baseline_secs = exp.timings[baseline.name]
     lo, hi = wilson(cross_full.tp, cross_full.tp + cross_full.fn)
     inputs = " · ".join(f"{name} {sha}" for name, sha in snapshot.items())
 
@@ -142,10 +143,33 @@ def render(exp: Experiment, snapshot: dict[str, str]) -> str:
         "hosts do not impersonate a brand by string similarity; they are throwaway domains\n"
         "on cheap TLDs. Rules and classifiers cover different halves of the problem, which\n"
         "is the argument for shipping both.\n",
-        f"**A published-style baseline.** A character n-gram logistic regression, trained\n"
-        f"and calibrated the same way, reaches {baseline.recall:.1%} recall at {baseline.fpr:.2%}\n"
+        f"**A published-style baseline.** A character n-gram logistic regression\n"
+        f"(3- to 5-grams, TF-IDF, 1,000 features, trained in {baseline_secs:.0f}s) reaches\n"
+        f"{baseline.recall:.1%} recall at {baseline.fpr:.2%}\n"
         f"realised FPR (AUC {baseline.auc:.3f}). It is a cheaper detector than the tree\n"
         "model and does not beat it.\n",
+    ]
+    if exp.urlnet is not None:
+        net = exp.urlnet
+        net_secs = exp.timings[net.name]
+        lines += [
+            f"**A URLNet-style baseline.** A character CNN (32-dim embeddings, filter\n"
+            f"widths 3 to 6 with 256 filters each, dropout 0.5, four dense layers,\n"
+            f"5 epochs, trained in {net_secs:.0f}s) reaches {net.recall:.1%} recall at\n"
+            f"{net.fpr:.2%} realised FPR (AUC {net.auc:.3f}). It trains on the same fit\n"
+            "set and calibrates on the same calibration set as every other row.\n",
+        ]
+    if exp.transformer is not None:
+        tra = exp.transformer
+        tra_secs = exp.timings[tra.name]
+        lines += [
+            f"**A URLTran-style baseline.** A small character transformer (2 layers,\n"
+            f"4 heads, 3 epochs, trained in {tra_secs:.0f}s) reaches {tra.recall:.1%}\n"
+            f"recall at {tra.fpr:.2%} realised FPR (AUC {tra.auc:.3f}). It trains on\n"
+            "the same fit set and calibrates on the same calibration set as every\n"
+            "other row.\n",
+        ]
+    lines += [
         "## Operating point of the shipped detector\n",
         f"`urlish` scores at **{exp.shipped_threshold:.4f}**. The artifact holds the model and\n"
         "threshold of the domain-disjoint row: fitted on the training half, calibrated on a\n"
