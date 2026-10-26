@@ -200,37 +200,6 @@ def negative_rows(
     return rows
 
 
-def build_dataset(
-    positives: dict[str, list[str]],
-    negatives: dict[str, list[tuple[int, str]]],
-    *,
-    head_cut: int = 10_000,
-    tail_cut: int = 60_000,
-    pos_cap: int = 12_000,
-    neg_cap: int = 60_000,
-) -> list[Row]:
-    """Positives from named phishing collections, negatives from ranked lists."""
-    rows: list[Row] = []
-
-    for collection, urls in positives.items():
-        step = max(1, len(urls) // pos_cap)
-        for url in urls[::step][:pos_cap]:
-            rows.append(Row(url, 1, registrable_domain(host_of(url)), collection, None))
-
-    for collection, ranked in negatives.items():
-        rows.extend(
-            negative_rows(
-                ranked,
-                collection,
-                head_cut=head_cut,
-                tail_cut=tail_cut,
-                cap=neg_cap,
-            )
-        )
-
-    return dedupe(rows)
-
-
 def select(
     rows: list[Row],
     *,
