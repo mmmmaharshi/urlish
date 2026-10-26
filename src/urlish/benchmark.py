@@ -118,6 +118,17 @@ def run(
     )
 
 
+def _stratum_for(domain: str, tranco_rank: dict[str, int]) -> str | None:
+    rank = tranco_rank.get(domain.lower())
+    if rank is None:
+        return None
+    if rank <= HEAD_CUT:
+        return "head"
+    if rank <= TAIL_CUT:
+        return "tail"
+    return None
+
+
 def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
     """Assemble the rows and the brand index exactly as the report does.
 
@@ -145,18 +156,16 @@ def load_dataset() -> tuple[list[Row], BrandIndex, dict[str, str]]:
     sampled_pos = pos_all[::pos_step][:12_000]
     sampled_neg = neg_all[::neg_step][:60_000]
 
-    def stratum_for(domain: str) -> str | None:
-        rank = tranco_rank.get(domain.lower())
-        if rank is None:
-            return None
-        if rank <= HEAD_CUT:
-            return "head"
-        if rank <= TAIL_CUT:
-            return "tail"
-        return None
-
     sampled_neg = [
-        Row(r.url, r.y, r.domain, r.collection, stratum_for(r.domain), r.date, r.target)
+        Row(
+            r.url,
+            r.y,
+            r.domain,
+            r.collection,
+            _stratum_for(r.domain, tranco_rank),
+            r.date,
+            r.target,
+        )
         for r in sampled_neg
     ]
     ranked = sum(1 for r in sampled_neg if r.stratum is not None)

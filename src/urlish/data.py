@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html as _html
 import random
 import sys
 from datetime import date as _date
@@ -154,8 +155,9 @@ def load_phreshphish(path: str | Path) -> list[Row]:
             if "." not in low or " " in low:
                 skipped += 1
                 continue
+            target = _html.unescape(raw_target) if raw_target and raw_target != "other" else None
             rows.append(
-                Row(url, y, registrable_domain(host_of(url)), "phreshphish", None, raw_date)
+                Row(url, y, registrable_domain(host_of(url)), "phreshphish", None, raw_date, target)
             )
     if skipped:
         print(f"{path}: skipped {skipped} malformed line(s)", file=sys.stderr)
@@ -275,6 +277,9 @@ def time_split(rows: list[Row], cutoff: str) -> tuple[list[int], list[int]]:
     asymmetry as ADR 0002: the test half holds the positives, so dropping there
     would discard the measurement.
     """
+    undated = sum(1 for r in rows if r.date is None)
+    if undated:
+        print(f"time_split: skipped {undated} undated row(s)", file=sys.stderr)
     train = [i for i, r in enumerate(rows) if r.date is not None and r.date < cutoff]
     test = [i for i, r in enumerate(rows) if r.date is not None and r.date >= cutoff]
     if not train or not test:
