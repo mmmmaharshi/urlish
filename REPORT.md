@@ -1,6 +1,6 @@
 # urlish benchmark report
 
-urlish 0.1.0 · tranco 919de10c · majestic 22269fcd · phishing_army aed736bd · openphish 292d9656
+urlish 0.2.0 · phreshphish 517faea7 · tranco 919de10c · majestic 22269fcd · openphish 292d9656
 
 Target false-positive rate: 1%. Thresholds are picked on held-out
 training data, never on the test set.
@@ -11,10 +11,10 @@ training data, never on the test set.
 |---|---|---:|---:|---:|
 | majestic | head | 10,000 | 0 | 10,000 |
 | openphish | - | 300 | 300 | 0 |
-| phishing_army | - | 12,000 | 12,000 | 0 |
-| tranco | head | 10,000 | 0 | 10,000 |
-| tranco | tail | 50,000 | 0 | 50,000 |
-| **main dataset** | | **72,300** | **12,300** | **60,000** |
+| phreshphish | - | 36,909 | 12,000 | 24,909 |
+| phreshphish | head | 24,940 | 0 | 24,940 |
+| phreshphish | tail | 10,151 | 0 | 10,151 |
+| **main dataset** | | **72,000** | **12,000** | **60,000** |
 
 Majestic contributes 10,000 negatives and is used only by the
 collection-shift rows, so it cannot move the other numbers.
@@ -23,18 +23,19 @@ collection-shift rows, so it cannot move the other numbers.
 
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
-| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
-| collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
-| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **48.3%** | 60.4% | 0.930 | 0.95% |
-| impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
+| random rows | 43,200 | 14,400 | 16.7% | **78.1%** | 94.2% | 0.981 | 0.96% |
+| domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
+| temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
+| popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
+| cross-dataset, host-only | 30,034 | 10,300 | 2.9% | **46.0%** | 60.8% | 0.836 | 0.89% |
+| cross-dataset, as deployed (paths kept) | 30,034 | 10,300 | 2.9% | **66.0%** | 38.2% | 0.814 | 3.21% |
+| impersonation rules only (no ML) | 0 | 14,462 | 12.4% | **0.0%** | 0.0% | 0.555 | 0.00% |
 
 
 ## What the numbers say
 
-The baseline reports 63.5% recall and 91.7%
-precision at a 1% false-positive budget, AUC 0.955. Even the leaky
+The baseline reports 78.1% recall and 94.2%
+precision at a 1% false-positive budget, AUC 0.981. Even the leaky
 split is not 99%: this is host-level detection on live collections, not a toy.
 
 Precision depends on how many positives the test set happens to contain, and that
@@ -42,49 +43,55 @@ ratio varies by an order of magnitude across rows (pos rate column). Compare row
 on recall@1%FPR and AUC; read precision only against its own pos rate.
 
 **Domain leakage costs little.** Domain-disjoint evaluation loses
-0.8 points of recall
-(63.5% -> 62.7%) with AUC essentially unchanged
-(0.955 -> 0.958). Phishing hosts are mostly single-use, so
+15.5 points of recall
+(78.1% -> 62.6%) with AUC essentially unchanged
+(0.981 -> 0.945). Phishing hosts are mostly single-use, so
 there was less to memorise than the usual story assumes.
 
 **Popularity shift spends the false-positive budget.** Training on ranks 1-10k and
-testing on 10k-60k leaves AUC at 0.959 - but the threshold calibrated
-for 1% false positives realises 2.29%, and recall lands at
-69.0%. A shipped detector would block roughly 1 in
-44 legitimate popular domains while every ranking
+testing on 10k-60k leaves AUC at 0.969 - but the threshold calibrated
+for 1% false positives realises 2.01%, and recall lands at
+76.4%. A shipped detector would block roughly 1 in
+50 legitimate popular domains while every ranking
 metric looked healthy.
 
-**Collection shift is the largest honest drop.** With negatives taken from
+**Time costs ranking.** Training on rows dated before the cutoff and testing on
+rows dated after it drops AUC to 0.949 and recall to
+54.4%; the threshold calibrated on the earlier period realises
+0.85% false positives on the later one.
+
+**Cross-collection transfer is the largest honest drop.** With negatives taken from
 two independent lists, this row changes the collector on both sides - Phishing
 Army to OpenPhish, Tranco to Majestic - while holding the popularity band and the
-host-only view fixed. AUC falls 0.955 -> 0.810 and
-recall 63.5% -> 28.0%, with a realised FPR of
-0.95% on negatives from a list it never saw.
+host-only view fixed. AUC falls 0.981 -> 0.836 and
+recall 78.1% -> 46.0%, with a realised FPR of
+0.89% on negatives from a list it never saw.
 
-4,992 rows were dropped from the training half because their
+56,895 rows were dropped from the training half because their
 registrable domain appeared in the test half: the collections overlap heavily,
 and a collection split that ignores that is measuring leakage, not transfer.
 
 **Keeping the URL path recovers the ranking, and then some.** The same model,
-scored on full URLs, reaches AUC 0.930 and recall
-48.3% (95% CI 42.7%-54.0% on
+scored on full URLs, reaches AUC 0.814 and recall
+66.0% (95% CI 60.5%-71.1% on
 300 positives), though the realised FPR is still
-0.95%. Path length and lure words carry real signal, which is why
+3.21%. Path length and lure words carry real signal, which is why
 `featurize()` normalises away scheme and trailing slash rather than discarding the
 path.
 
-**Brand rules are precise but narrow.** No training data, 85.1%
-precision at 0.18% FPR, but 4.8% recall. Most phishing
+**Brand rules are precise but narrow.** No training data, 0.0%
+precision at 0.00% FPR, but 0.0% recall. Most phishing
 hosts do not impersonate a brand by string similarity; they are throwaway domains
 on cheap TLDs. Rules and classifiers cover different halves of the problem, which
 is the argument for shipping both.
 
 ## Operating point of the shipped detector
 
-`urlish` scores at **0.9062**. The artifact holds the model and
+`urlish` scores at **0.8744**. The artifact holds the model and
 threshold of the domain-disjoint row: fitted on the training half, calibrated on a
 quarter of it, and measured on the test half that neither half saw. That row reports
-0.79% false positives at 62.7% recall, inside the 1% budget. The
+1.28% false positives at 62.6% recall. The budget was spent
+on the calibration set; this test distribution spends 1.28% of it.
 budget is spent on the calibration set, and a different test distribution can spend
 more.
 Scoring at 0.5 instead would realise a false-positive rate many times over budget,
@@ -92,9 +99,11 @@ because a gradient-boosted probability is not a decision threshold.
 
 ## Limitations
 
-- Single snapshot. No dates in these collections, so there is no temporal split. A
-  temporal holdout is the missing experiment and is strictly harder than any row
-  above.
+- Single dated collection. The temporal row uses one collection's dates, and the
+  leakage filter in that collection's paper runs on HTML, which this benchmark
+  does not read, so the row is a URL-level approximation.
+- About four in ten negative rows are unranked in Tranco and are excluded from
+  the popularity row; the report prints that coverage.
 
 - Labels are collection membership, not ground truth. Collections contain dead,
   parked and occasionally mislabelled hosts, and a popular domain is not a

@@ -18,12 +18,13 @@ prose.
 <!-- results:start -->
 | split | n fit | n test | pos rate | recall@1%FPR | precision@1%FPR | ROC-AUC | realised FPR |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| random rows | 43,380 | 14,460 | 17.0% | **63.5%** | 91.7% | 0.955 | 1.18% |
-| domain-disjoint | 43,380 | 14,460 | 17.2% | **62.7%** | 94.3% | 0.958 | 0.79% |
-| popularity shift (head train, tail test) | 14,880 | 52,460 | 4.7% | **69.0%** | 59.8% | 0.959 | 2.29% |
-| collection shift, host-only | 12,756 | 10,300 | 2.9% | **28.0%** | 46.9% | 0.810 | 0.95% |
-| collection shift, as deployed (paths kept) | 12,756 | 10,300 | 2.9% | **48.3%** | 60.4% | 0.930 | 0.95% |
-| impersonation rules only (no ML) | 0 | 14,460 | 17.2% | **4.8%** | 85.1% | 0.507 | 0.18% |
+| random rows | 43,200 | 14,400 | 16.7% | **78.1%** | 94.2% | 0.981 | 0.96% |
+| domain-disjoint | 43,144 | 14,462 | 12.4% | **62.6%** | 87.4% | 0.945 | 1.28% |
+| temporal split | 19,914 | 19,984 | 16.6% | **54.4%** | 92.8% | 0.949 | 0.85% |
+| popularity shift (head train, tail test) | 25,893 | 12,567 | 19.2% | **76.4%** | 90.0% | 0.969 | 2.01% |
+| cross-dataset, host-only | 30,034 | 10,300 | 2.9% | **46.0%** | 60.8% | 0.836 | 0.89% |
+| cross-dataset, as deployed (paths kept) | 30,034 | 10,300 | 2.9% | **66.0%** | 38.2% | 0.814 | 3.21% |
+| impersonation rules only (no ML) | 0 | 14,462 | 12.4% | **0.0%** | 0.0% | 0.555 | 0.00% |
 <!-- results:end -->
 
 Three things fall out of that table:
@@ -163,9 +164,10 @@ curl -sO https://openphish.com/feed.txt
 
 ## Known limits
 
-- **No temporal split.** These collections carry no dates. A temporal holdout is
-  the missing experiment and is harder than anything above, because negatives
-  always look "current".
+- **One collection, one date range.** The temporal row uses one collection's
+  dates (July 2024 to December 2025). The leakage filter in that collection's
+  paper runs on page content, which this benchmark does not read, so the row is
+  a URL-level approximation.
 - **Labels are collection membership**, not ground truth. Collections include
   dead, parked and occasionally mislabelled hosts, and popularity is not safety.
 - **The collection-shift test is narrower than the rest**: its positive count is
@@ -182,10 +184,8 @@ curl -sO https://openphish.com/feed.txt
 
 ## If you want to take this further
 
-The two experiments this harness is built for but does not contain:
+The experiment this harness is built for but does not contain:
 
-1. **Temporal split.** Needs dated collections (PhishTank with a key, URLhaus, or
-   Certificate Transparency logs). This is the version a reviewer will ask for.
-2. **Threshold drift under a live feed.** Recalibrate weekly and plot realised
+1. **Threshold drift under a live feed.** Recalibrate weekly and plot realised
    FPR over months. The popularity-shift row suggests this is the real
    operational risk, and nobody publishes it.
